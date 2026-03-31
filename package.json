@@ -1,0 +1,17 @@
+{
+  "name": "pakiship-workspace",
+  "private": true,
+  "version": "0.0.1",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "scripts": {
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:start": "npm --prefix frontend run start",
+    "backend:build": "npm --prefix backend run build",
+    "backend:dev": "npm --prefix backend run start:dev",
+    "backend:start": "npm --prefix backend run start",
+    "dev:all": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\""
+  }
+}

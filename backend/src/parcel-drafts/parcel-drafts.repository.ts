@@ -1,0 +1,187 @@
+import { Injectable } from "@nestjs/common";
+import { SupabaseService } from "../supabase/supabase.service";
+import {
+  DEFAULT_ITEMS_PAGE_SIZE,
+  MAX_ITEMS_PAGE_SIZE,
+} from "./parcel-drafts.constants";
+
+@Injectable()
+export class ParcelDraftsRepository {
+  constructor(private readonly supabaseService: SupabaseService) {}
+
+  async findOwnedDraftSummary(draftId: string, userId: string) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase
+      .from("parcel_drafts")
+      .select("id, user_id, step_completed, status")
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .single();
+  }
+
+  async saveStepOneDraft(
+    draftId: string | null,
+    userId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const supabase = this.supabaseService.createAdminClient();
+    const fullPayload = {
+      user_id: userId,
+      ...payload,
+    };
+
+    if (draftId) {
+      return supabase
+        .from("parcel_drafts")
+        .update(fullPayload)
+        .eq("id", draftId)
+        .eq("user_id", userId)
+        .select("id")
+        .single();
+    }
+
+    return supabase
+      .from("parcel_drafts")
+      .insert(fullPayload)
+      .select("id")
+      .single();
+  }
+
+  async findOwnedDraftWithItems(
+    draftId: string,
+    userId: string,
+    itemsLimit = DEFAULT_ITEMS_PAGE_SIZE,
+  ) {
+    const cappedLimit = Math.min(Math.max(itemsLimit, 1), MAX_ITEMS_PAGE_SIZE);
+    const supabase = this.supabaseService.createAdminClient();
+
+    const draftResult = await supabase
+      .from("parcel_drafts")
+      .select(
+        `
+          id,
+          pickup_address,
+          pickup_details,
+          delivery_address,
+          delivery_details,
+          distance_text,
+          duration_text,
+          step_completed,
+          status,
+          parcel_draft_items (
+            id,
+            size,
+            weight_text,
+            item_type,
+            delivery_guarantee,
+            quantity,
+            photo_name
+          )
+        `,
+      )
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .order("id", { ascending: true, referencedTable: "parcel_draft_items" })
+      .limit(cappedLimit, { foreignTable: "parcel_draft_items" })
+      .single();
+
+    const countResult = await supabase
+      .from("parcel_draft_items")
+      .select("id", { count: "exact", head: true })
+      .eq("parcel_draft_id", draftId);
+
+    return {
+      ...draftResult,
+      itemCount: countResult.count ?? 0,
+      itemPageSize: cappedLimit,
+    };
+  }
+
+  async listOwnedDraftItemsWithCount(
+    draftId: string,
+    userId: string,
+    limit = DEFAULT_ITEMS_PAGE_SIZE,
+    offset = 0,
+  ) {
+    const cappedLimit = Math.min(Math.max(limit, 1), MAX_ITEMS_PAGE_SIZE);
+    const safeOffset = Math.max(offset, 0);
+    const supabase = this.supabaseService.createAdminClient();
+
+    const { data: draft, error: draftError } = await supabase
+      .from("parcel_drafts")
+      .select("id")
+      .eq("id", draftId)
+      .eq("user_id", userId)
+      .single();
+
+    if (draftError || !draft) {
+      return { data: null, error: draftError ?? new Error("Draft not found"), totalCount: 0 };
+    }
+
+    const { data, error, count } = await supabase
+      .from("parcel_draft_items")
+      .select(
+        "id, size, weight_text, item_type, delivery_guarantee, quantity, photo_name",
+        { count: "exact" },
+      )
+      .eq("parcel_draft_id", draftId)
+      .order("id", { ascending: true })
+      .range(safeOffset, safeOffset + cappedLimit - 1);
+
+    return { data, error, totalCount: count ?? 0, limit: cappedLimit, offset: safeOffset };
+  }
+
+  async findOwnedDraftItem(draftId: string, itemId: string, userId: string) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase
+      .from("parcel_draft_items")
+      .select(`
+        id,
+        quantity,
+        parcel_drafts!inner (
+          id,
+          user_id
+        )
+      `)
+      .eq("id", itemId)
+      .eq("parcel_draft_id", draftId)
+      .eq("parcel_drafts.user_id", userId)
+      .single();
+  }
+
+  async createDraftItems(items: Record<string, unknown>[]) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase.from("parcel_draft_items").insert(items).select("id");
+  }
+
+  async updateDraftItemQuantity(draftId: string, itemId: string, quantity: number) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase
+      .from("parcel_draft_items")
+      .update({ quantity })
+      .eq("id", itemId)
+      .eq("parcel_draft_id", draftId);
+  }
+
+  async deleteDraftItem(draftId: string, itemId: string) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase
+      .from("parcel_draft_items")
+      .delete()
+      .eq("id", itemId)
+      .eq("parcel_draft_id", draftId);
+  }
+
+  async updateOwnedDraftState(
+    draftId: string,
+    userId: string,
+    patch: Record<string, unknown>,
+  ) {
+    const supabase = this.supabaseService.createAdminClient();
+    return supabase
+      .from("parcel_drafts")
+      .update(patch)
+      .eq("id", draftId)
+      .eq("user_id", userId);
+  }
+}
