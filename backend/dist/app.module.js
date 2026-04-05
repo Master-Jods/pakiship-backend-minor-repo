@@ -8,7 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
+const customer_notifications_module_1 = require("./customer-notifications/customer-notifications.module");
 const auth_module_1 = require("./auth/auth.module");
+const customer_profile_module_1 = require("./customer-profile/customer-profile.module");
 const parcel_drafts_module_1 = require("./parcel-drafts/parcel-drafts.module");
 const supabase_module_1 = require("./supabase/supabase.module");
 let AppModule = class AppModule {
@@ -16,6 +18,12 @@ let AppModule = class AppModule {
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [supabase_module_1.SupabaseModule, auth_module_1.AuthModule, parcel_drafts_module_1.ParcelDraftsModule],
+        imports: [
+            supabase_module_1.SupabaseModule,
+            auth_module_1.AuthModule,
+            customer_notifications_module_1.CustomerNotificationsModule,
+            customer_profile_module_1.CustomerProfileModule,
+            parcel_drafts_module_1.ParcelDraftsModule,
+        ],
     })
 ], AppModule);

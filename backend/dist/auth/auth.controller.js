@@ -28,6 +28,24 @@ let AuthController = class AuthController {
             throw new common_1.BadRequestException("Role, identifier, and password are required.");
         }
         const result = await this.authService.signIn(identifier, password, role);
+        const requiresTwoFactor = "requiresTwoFactor" in result && result.requiresTwoFactor;
+        if (!requiresTwoFactor) {
+            response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)());
+        }
+        return {
+            user: result.user,
+            redirectPath: result.redirectPath,
+            requiresTwoFactor,
+            challengeToken: requiresTwoFactor && "challengeToken" in result ? result.challengeToken : undefined,
+        };
+    }
+    async verifyTwoFactor(body, response) {
+        const challengeToken = String(body.challengeToken ?? "");
+        const code = String(body.code ?? "");
+        if (!challengeToken || !code) {
+            throw new common_1.BadRequestException("Challenge token and verification code are required.");
+        }
+        const result = await this.authService.verifyTwoFactorLogin(challengeToken, code);
         response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)());
         return {
             user: result.user,
@@ -93,6 +111,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, common_1.Post)("login/verify-2fa"),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "verifyTwoFactor", null);
 __decorate([
     (0, common_1.Post)("signup"),
     __param(0, (0, common_1.Body)()),

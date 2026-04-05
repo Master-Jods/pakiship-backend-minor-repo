@@ -9,6 +9,20 @@ export declare class AuthController {
             id: any;
             fullName: any;
             role: UserRole;
+        } | {
+            id: any;
+            fullName: any;
+            role: UserRole;
+        };
+        redirectPath: string;
+        requiresTwoFactor: boolean;
+        challengeToken: string;
+    }>;
+    verifyTwoFactor(body: Record<string, unknown>, response: Response): Promise<{
+        user: {
+            id: string;
+            fullName: string;
+            role: UserRole;
         };
         redirectPath: string;
     }>;

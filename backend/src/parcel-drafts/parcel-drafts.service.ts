@@ -13,6 +13,8 @@ import {
   MAX_ITEMS_PAGE_SIZE,
   MAX_ITEMS_PER_REQUEST,
 } from "./parcel-drafts.constants";
+import { CustomerNotificationsService } from "../customer-notifications/customer-notifications.service";
+import { SupabaseService } from "../supabase/supabase.service";
 
 const PHONE_REGEX = /^09\d{9}$/;
 
@@ -48,7 +50,11 @@ function createTrackingNumber() {
 
 @Injectable()
 export class ParcelDraftsService {
-  constructor(private readonly repository: ParcelDraftsRepository) {}
+  constructor(
+    private readonly repository: ParcelDraftsRepository,
+    private readonly customerNotificationsService: CustomerNotificationsService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   async saveRouteDetails(user: SessionPayload, body: Record<string, unknown>) {
     const draftId = body.draftId ? String(body.draftId) : null;
@@ -372,9 +378,25 @@ export class ParcelDraftsService {
       throw new InternalServerErrorException("Unable to complete booking right now.");
     }
 
+    const trackingNumber = createTrackingNumber();
+    await this.customerNotificationsService.createNotification(
+      user.userId,
+      "delivery",
+      "Parcel booking confirmed",
+      `Your parcel for ${receiverName} is booked. Tracking No. ${trackingNumber}.`,
+    );
+
+    const admin = this.supabaseService.createAdminClient();
+    await admin.from("customer_activity_logs").insert({
+      user_id: user.userId,
+      activity_type: "booking",
+      title: "Parcel booking confirmed",
+      description: `You booked a parcel for ${receiverName}. Tracking No. ${trackingNumber}.`,
+    });
+
     return {
       draftId,
-      trackingNumber: createTrackingNumber(),
+      trackingNumber,
       stepCompleted: 5,
       status: "submitted",
       booking: {

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_service_1 = require("../supabase/supabase.service");
+const two_factor_util_1 = require("./two-factor.util");
 function normalizeEmail(email) {
     return email.trim().toLowerCase();
 }
@@ -109,7 +110,7 @@ let AuthService = class AuthService {
         const identifierColumn = identifier.includes("@") ? "email" : "phone";
         const { data: profileRow, error: profileError } = await admin
             .from("profiles")
-            .select("id, full_name, email, phone, role")
+            .select("id, full_name, email, phone, role, two_factor_enabled")
             .eq(identifierColumn, normalizedIdentifier)
             .eq("role", role)
             .maybeSingle();
@@ -123,6 +124,27 @@ let AuthService = class AuthService {
         if (authError || !authData.user) {
             throw new common_1.UnauthorizedException("Invalid credentials for the selected role.");
         }
+        const session = {
+            userId: profileRow.id,
+            role: profileRow.role,
+            fullName: profileRow.full_name,
+        };
+        if (profileRow.two_factor_enabled) {
+            const userResponse = await admin.auth.admin.getUserById(profileRow.id);
+            const secret = userResponse.data.user?.user_metadata?.two_factor_secret;
+            if (typeof secret === "string" && secret.length > 0) {
+                return {
+                    requiresTwoFactor: true,
+                    challengeToken: (0, two_factor_util_1.createTwoFactorChallengeToken)(session),
+                    user: {
+                        id: profileRow.id,
+                        fullName: profileRow.full_name,
+                        role: profileRow.role,
+                    },
+                    redirectPath: getRedirectPath(profileRow.role),
+                };
+            }
+        }
         return {
             user: {
                 id: profileRow.id,
@@ -130,10 +152,32 @@ let AuthService = class AuthService {
                 role: profileRow.role,
             },
             redirectPath: getRedirectPath(profileRow.role),
+            session,
+        };
+    }
+    async verifyTwoFactorLogin(challengeToken, code) {
+        const session = (0, two_factor_util_1.readTwoFactorChallengeToken)(challengeToken);
+        if (!session) {
+            throw new common_1.UnauthorizedException("Your verification session has expired. Please log in again.");
+        }
+        const admin = this.supabaseService.createAdminClient();
+        const userResponse = await admin.auth.admin.getUserById(session.userId);
+        const metadata = userResponse.data.user?.user_metadata ?? {};
+        const secret = metadata.two_factor_secret;
+        if (typeof secret !== "string" || !(0, two_factor_util_1.verifyTotpToken)(secret, code)) {
+            throw new common_1.UnauthorizedException("Invalid authenticator code.");
+        }
+        return {
+            user: {
+                id: session.userId,
+                fullName: session.fullName,
+                role: session.role,
+            },
+            redirectPath: getRedirectPath(session.role),
             session: {
-                userId: profileRow.id,
-                role: profileRow.role,
-                fullName: profileRow.full_name,
+                userId: session.userId,
+                fullName: session.fullName,
+                role: session.role,
             },
         };
     }

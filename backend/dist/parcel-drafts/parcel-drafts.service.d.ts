@@ -1,8 +1,12 @@
 import type { SessionPayload } from "../common/session/session.types";
 import { ParcelDraftsRepository } from "./parcel-drafts.repository";
+import { CustomerNotificationsService } from "../customer-notifications/customer-notifications.service";
+import { SupabaseService } from "../supabase/supabase.service";
 export declare class ParcelDraftsService {
     private readonly repository;
-    constructor(repository: ParcelDraftsRepository);
+    private readonly customerNotificationsService;
+    private readonly supabaseService;
+    constructor(repository: ParcelDraftsRepository, customerNotificationsService: CustomerNotificationsService, supabaseService: SupabaseService);
     saveRouteDetails(user: SessionPayload, body: Record<string, unknown>): Promise<{
         draftId: any;
     }>;

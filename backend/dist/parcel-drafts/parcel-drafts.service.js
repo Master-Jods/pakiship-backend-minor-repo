@@ -13,6 +13,8 @@ exports.ParcelDraftsService = void 0;
 const common_1 = require("@nestjs/common");
 const parcel_drafts_repository_1 = require("./parcel-drafts.repository");
 const parcel_drafts_constants_1 = require("./parcel-drafts.constants");
+const customer_notifications_service_1 = require("../customer-notifications/customer-notifications.service");
+const supabase_service_1 = require("../supabase/supabase.service");
 const PHONE_REGEX = /^09\d{9}$/;
 function asNonEmptyString(value) {
     const text = String(value ?? "").trim();
@@ -32,8 +34,10 @@ function createTrackingNumber() {
     return `PKS-${year}-${serial}`;
 }
 let ParcelDraftsService = class ParcelDraftsService {
-    constructor(repository) {
+    constructor(repository, customerNotificationsService, supabaseService) {
         this.repository = repository;
+        this.customerNotificationsService = customerNotificationsService;
+        this.supabaseService = supabaseService;
     }
     async saveRouteDetails(user, body) {
         const draftId = body.draftId ? String(body.draftId) : null;
@@ -279,9 +283,18 @@ let ParcelDraftsService = class ParcelDraftsService {
         if (updateResult.error) {
             throw new common_1.InternalServerErrorException("Unable to complete booking right now.");
         }
+        const trackingNumber = createTrackingNumber();
+        await this.customerNotificationsService.createNotification(user.userId, "delivery", "Parcel booking confirmed", `Your parcel for ${receiverName} is booked. Tracking No. ${trackingNumber}.`);
+        const admin = this.supabaseService.createAdminClient();
+        await admin.from("customer_activity_logs").insert({
+            user_id: user.userId,
+            activity_type: "booking",
+            title: "Parcel booking confirmed",
+            description: `You booked a parcel for ${receiverName}. Tracking No. ${trackingNumber}.`,
+        });
         return {
             draftId,
-            trackingNumber: createTrackingNumber(),
+            trackingNumber,
             stepCompleted: 5,
             status: "submitted",
             booking: {
@@ -302,5 +315,7 @@ let ParcelDraftsService = class ParcelDraftsService {
 exports.ParcelDraftsService = ParcelDraftsService;
 exports.ParcelDraftsService = ParcelDraftsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [parcel_drafts_repository_1.ParcelDraftsRepository])
+    __metadata("design:paramtypes", [parcel_drafts_repository_1.ParcelDraftsRepository,
+        customer_notifications_service_1.CustomerNotificationsService,
+        supabase_service_1.SupabaseService])
 ], ParcelDraftsService);

@@ -19,6 +19,13 @@ export function LoginPage() {
   const [keepLoggedIn, setKeepLoggedIn] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorChallenge, setTwoFactorChallenge] = useState<{
+    challengeToken: string;
+    redirectPath: string;
+    user: { id: string; fullName: string; role: LoginRole };
+  } | null>(null);
+  const [isVerifyingTwoFactor, setIsVerifyingTwoFactor] = useState(false);
   
   // Forgot Password State
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -105,22 +112,80 @@ export function LoginPage() {
         return;
       }
 
-      setError("");
-      localStorage.setItem("userId", result.user.id);
-      localStorage.setItem("user_role", result.user.role);
-      localStorage.setItem("userRole", result.user.role);
-      localStorage.setItem("userName", result.user.fullName);
-      localStorage.setItem("is_logged_in", "true");
-
-      if (result.user.role === "operator") {
-        await activateGeofence("HUB_MNL_001");
+      if (result.requiresTwoFactor && result.challengeToken) {
+        setTwoFactorChallenge({
+          challengeToken: result.challengeToken,
+          redirectPath: result.redirectPath,
+          user: result.user,
+        });
+        setTwoFactorCode("");
+        setError("");
+        return;
       }
 
-      navigate(result.redirectPath);
+      setError("");
+      await finalizeLogin({
+        user: result.user,
+        redirectPath: result.redirectPath,
+      });
     } catch {
       setError("Unable to log in right now.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const finalizeLogin = async (payload: {
+    user: { id: string; fullName: string; role: LoginRole };
+    redirectPath: string;
+  }) => {
+    localStorage.setItem("userId", payload.user.id);
+    localStorage.setItem("user_role", payload.user.role);
+    localStorage.setItem("userRole", payload.user.role);
+    localStorage.setItem("userName", payload.user.fullName);
+    localStorage.setItem("is_logged_in", "true");
+
+    if (payload.user.role === "operator") {
+      await activateGeofence("HUB_MNL_001");
+    }
+
+    navigate(payload.redirectPath);
+  };
+
+  const handleVerifyTwoFactor = async () => {
+    if (!twoFactorChallenge) return;
+    if (twoFactorCode.trim().length !== 6) {
+      setError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+
+    setIsVerifyingTwoFactor(true);
+
+    try {
+      const response = await apiFetch("/api/auth/login/verify-2fa", {
+        method: "POST",
+        body: JSON.stringify({
+          challengeToken: twoFactorChallenge.challengeToken,
+          code: twoFactorCode,
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.message || "Invalid authenticator code.");
+        return;
+      }
+
+      setError("");
+      setTwoFactorChallenge(null);
+      await finalizeLogin({
+        user: result.user,
+        redirectPath: result.redirectPath,
+      });
+    } catch {
+      setError("Unable to verify your authenticator code right now.");
+    } finally {
+      setIsVerifyingTwoFactor(false);
     }
   };
 
@@ -300,6 +365,68 @@ export function LoginPage() {
           </div>
         </div>
       </main>
+
+      {twoFactorChallenge && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#041614]/40 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 md:p-10 shadow-2xl relative animate-in zoom-in-95 duration-300">
+            <button
+              onClick={() => {
+                setTwoFactorChallenge(null);
+                setTwoFactorCode("");
+                setError("");
+              }}
+              className="absolute right-6 top-6 p-2 text-gray-300 hover:text-gray-500 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-6">
+              <div className="w-14 h-14 bg-[#F0F9F8] rounded-2xl flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6 text-[#39B5A8]" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-2xl font-bold text-[#041614]">Verify Sign-In</h3>
+                <p className="text-gray-400 text-sm font-medium mt-1">
+                  Enter the 6-digit code from your authenticator app for {twoFactorChallenge.user.fullName}.
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex items-center gap-3">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                  <p className="text-xs font-bold text-red-600">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-1.5 text-left">
+                <label className="text-[10px] font-bold text-[#39B5A8] uppercase tracking-widest px-1">
+                  Authenticator Code
+                </label>
+                <input
+                  type="text"
+                  value={twoFactorCode}
+                  onChange={(e) =>
+                    setTwoFactorCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="123456"
+                  className="w-full bg-[#F0F9F8] border border-[#39B5A8]/10 rounded-xl px-4 py-3.5 text-[#041614] outline-none text-center tracking-[0.5em] text-sm font-bold focus:border-[#39B5A8]"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void handleVerifyTwoFactor();
+                }}
+                disabled={isVerifyingTwoFactor}
+                className="w-full bg-[#041614] disabled:opacity-40 text-white font-bold py-4 rounded-xl hover:bg-[#123E3A] transition-all shadow-lg active:scale-[0.98] text-xs uppercase tracking-[0.2em]"
+              >
+                {isVerifyingTwoFactor ? "Verifying..." : "Complete Login"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- FORGOT PASSWORD MODAL --- */}
       {showForgotModal && (

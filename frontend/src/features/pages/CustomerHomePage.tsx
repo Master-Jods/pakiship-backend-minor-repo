@@ -26,6 +26,16 @@ import {
 import { ProfileDropdown } from "../components/ProfileDropdown";
 import { NotificationDropdown, Notification } from "../components/NotificationDropdown";
 import { clearClientSession, getTutorialStorageKey } from "@/lib/client-auth";
+import {
+  fetchCustomerProfile,
+  syncCustomerProfileToStorage,
+} from "@/lib/customer-profile";
+import {
+  clearAllCustomerNotifications,
+  fetchCustomerNotifications,
+  markAllCustomerNotificationsAsRead,
+  markCustomerNotificationAsRead,
+} from "@/lib/customer-notifications";
 
 // Assets
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
@@ -58,42 +68,10 @@ export function CustomerHomePage() {
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userName, setUserName] = useState("Guest User");
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
 
   // Notifications State
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: "notif-001",
-      type: "delivery",
-      title: "Parcel Out for Delivery",
-      message: "Your parcel PKS-2024-001 is on its way! Expected arrival: 15 mins",
-      time: "5 mins ago",
-      isRead: false,
-    },
-    {
-      id: "notif-002",
-      type: "delivery",
-      title: "Delivery Completed",
-      message: "PKS-2024-002 has been successfully delivered to Quezon City",
-      time: "2 hours ago",
-      isRead: false,
-    },
-    {
-      id: "notif-003",
-      type: "system",
-      title: "Scheduled Maintenance",
-      message: "System will be offline on March 15, 2:00 AM - 4:00 AM PHT for updates",
-      time: "1 day ago",
-      isRead: true,
-    },
-    {
-      id: "notif-004",
-      type: "promo",
-      title: "Special Discount!",
-      message: "Get 20% off on your next PakiExpress booking. Valid until March 20!",
-      time: "2 days ago",
-      isRead: true,
-    },
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   // Announcements State
   const [announcements, setAnnouncements] = useState<Announcement[]>([
@@ -111,6 +89,12 @@ export function CustomerHomePage() {
       message: "We've expanded! You can now drop off parcels at 5 new locations in Lipa City.",
       isPinned: false,
     },
+  ]);
+  const [customerStats, setCustomerStats] = useState([
+    { label: "Total Bookings", value: "0" },
+    { label: "Active Bookings", value: "0" },
+    { label: "Saved Vehicles", value: "0" },
+    { label: "Account Created", value: "Unknown" },
   ]);
 
   // Refs for Tutorial Spotlight
@@ -151,47 +135,110 @@ export function CustomerHomePage() {
   const handleMarkAsRead = (id: string) => {
     setNotifications((prev) =>
       prev.map((notif) =>
-        notif.id === id ? { ...notif, isRead: true } : notif
-      )
+        notif.id === id ? { ...notif, isRead: true } : notif,
+      ),
     );
+    void markCustomerNotificationAsRead(id).catch(() => {
+      // Keep optimistic UI; notifications will refresh on next page load.
+    });
   };
 
   const handleMarkAllAsRead = () => {
     setNotifications((prev) =>
-      prev.map((notif) => ({ ...notif, isRead: true }))
+      prev.map((notif) => ({ ...notif, isRead: true })),
     );
+    void markAllCustomerNotificationsAsRead().catch(() => {
+      // Keep optimistic UI; notifications will refresh on next page load.
+    });
   };
 
   const handleClearAll = () => {
     setNotifications([]);
+    void clearAllCustomerNotifications().catch(() => {
+      // Keep optimistic UI; notifications will refresh on the next poll.
+    });
   };
 
   useEffect(() => {
-  // Function to load data from storage
-  const syncProfileData = () => {
-    setUserName(localStorage.getItem("userName") || "Guest User");
-    setProfileImage(localStorage.getItem("customerProfilePicture"));
-  };
+    const syncProfileData = () => {
+      const nextProfileImage = localStorage.getItem("customerProfilePicture");
+      setUserName(localStorage.getItem("userName") || "Guest User");
+      setProfileImage(nextProfileImage || null);
+    };
 
-  // Initial load
-  syncProfileData();
-
-  // Listen for changes made in EditProfilePage
-  window.addEventListener("storage", syncProfileData);
+    syncProfileData();
+    window.addEventListener("storage", syncProfileData);
   
-  return () => window.removeEventListener("storage", syncProfileData);
-}, []);
+    return () => window.removeEventListener("storage", syncProfileData);
+  }, []);
   
   useEffect(() => {
-    const storedName = localStorage.getItem("userName");
-    if (storedName) setUserName(storedName);
-
     const hasShownTutorial = localStorage.getItem(getTutorialStorageKey("customer"));
     if (!hasShownTutorial) setShowTutorial(true);
 
     setAnnouncements((prev) => 
       prev.filter((a) => !localStorage.getItem(`dismissed_${a.id}`))
     );
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const refreshNotifications = async () => {
+      try {
+        const notificationsResult = await fetchCustomerNotifications();
+        if (isMounted) {
+          setNotifications(notificationsResult.notifications);
+        }
+      } catch {
+        // Keep the latest known notification state if refresh fails.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void refreshNotifications();
+    }, 20000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshNotifications();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadCustomerProfile = async () => {
+      try {
+        const [profileResult, notificationsResult] = await Promise.all([
+          fetchCustomerProfile(),
+          fetchCustomerNotifications(),
+        ]);
+        setUserName(profileResult.profile.fullName);
+        setProfileImage(profileResult.profile.profilePicture);
+        setCustomerStats([
+          { label: "Total Bookings", value: String(profileResult.stats.totalBookings) },
+          { label: "Active Bookings", value: String(profileResult.stats.activeBookings) },
+          { label: "Saved Vehicles", value: String(profileResult.stats.savedVehicles) },
+          { label: "Account Created", value: profileResult.stats.accountCreated },
+        ]);
+        setNotifications(notificationsResult.notifications);
+        syncCustomerProfileToStorage(profileResult.profile);
+      } catch {
+        // Keep local fallback values if the backend is unavailable.
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    void loadCustomerProfile();
   }, []);
 
   return (
@@ -325,7 +372,7 @@ export function CustomerHomePage() {
 
               <div className="text-center md:text-left">
                 <h1 className="text-3xl md:text-4xl font-black text-[#041614] mb-2">
-                  Welcome, {userName}!
+                  Welcome, {isLoadingProfile ? "Loading..." : userName}!
                 </h1>
                 <p className="text-[#39B5A8] text-lg font-semibold italic opacity-80">
                   Hatid Agad, Walang Abala.

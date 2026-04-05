@@ -29,6 +29,16 @@ export declare class AuthService {
         };
     }>;
     signIn(identifier: string, password: string, role: UserRole): Promise<{
+        requiresTwoFactor: true;
+        challengeToken: string;
+        user: {
+            id: any;
+            fullName: any;
+            role: UserRole;
+        };
+        redirectPath: string;
+        session?: undefined;
+    } | {
         user: {
             id: any;
             fullName: any;
@@ -39,6 +49,21 @@ export declare class AuthService {
             userId: any;
             role: UserRole;
             fullName: any;
+        };
+        requiresTwoFactor?: undefined;
+        challengeToken?: undefined;
+    }>;
+    verifyTwoFactorLogin(challengeToken: string, code: string): Promise<{
+        user: {
+            id: string;
+            fullName: string;
+            role: UserRole;
+        };
+        redirectPath: string;
+        session: {
+            userId: string;
+            fullName: string;
+            role: UserRole;
         };
     }>;
 }

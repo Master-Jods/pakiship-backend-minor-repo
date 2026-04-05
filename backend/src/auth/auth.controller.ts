@@ -36,6 +36,38 @@ export class AuthController {
     }
 
     const result = await this.authService.signIn(identifier, password, role);
+    const requiresTwoFactor = "requiresTwoFactor" in result && result.requiresTwoFactor;
+
+    if (!requiresTwoFactor) {
+      response.cookie(
+        SESSION_COOKIE,
+        createSessionToken(result.session),
+        getSessionCookieOptions(),
+      );
+    }
+
+    return {
+      user: result.user,
+      redirectPath: result.redirectPath,
+      requiresTwoFactor,
+      challengeToken:
+        requiresTwoFactor && "challengeToken" in result ? result.challengeToken : undefined,
+    };
+  }
+
+  @Post("login/verify-2fa")
+  async verifyTwoFactor(
+    @Body() body: Record<string, unknown>,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const challengeToken = String(body.challengeToken ?? "");
+    const code = String(body.code ?? "");
+
+    if (!challengeToken || !code) {
+      throw new BadRequestException("Challenge token and verification code are required.");
+    }
+
+    const result = await this.authService.verifyTwoFactorLogin(challengeToken, code);
     response.cookie(
       SESSION_COOKIE,
       createSessionToken(result.session),

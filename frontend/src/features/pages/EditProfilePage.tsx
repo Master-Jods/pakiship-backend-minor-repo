@@ -8,9 +8,26 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
+import {
+  changeCustomerPassword,
+  disableCustomerTwoFactor,
+  enableCustomerTwoFactor,
+  fetchCustomerProfile,
+  setupCustomerTwoFactor,
+  syncCustomerProfileToStorage,
+  uploadCustomerDiscountId,
+  uploadCustomerProfilePicture,
+  updateCustomerProfile,
+  type CustomerProfileResponse,
+} from '@/lib/customer-profile';
 
 // Assets
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
+
+function getStoredValue(key: string) {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(key);
+}
 
 export function EditProfilePage() {
   const navigate = useNavigate();
@@ -22,88 +39,155 @@ export function EditProfilePage() {
   const [show2FAModal, setShow2FAModal] = useState(false);
   const [showPass, setShowPass] = useState({ current: false, new: false });
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isUploadingDiscountId, setIsUploadingDiscountId] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorSetup, setTwoFactorSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
+  const [isPreparingTwoFactor, setIsPreparingTwoFactor] = useState(false);
+  const [isSubmittingTwoFactor, setIsSubmittingTwoFactor] = useState(false);
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
   
-  const [profilePicture, setProfilePicture] = useState<string | null>(
-    localStorage.getItem('customerProfilePicture')
+  const [profilePicture, setProfilePicture] = useState<string | null>(() =>
+    getStoredValue('customerProfilePicture'),
   );
 
-  const [formData, setFormData] = useState({
-    name: localStorage.getItem('userName') || '',
-    email: localStorage.getItem('userEmail') || 'guest@pakiship.ph',
-    phone: localStorage.getItem('userPhone') || '09123456789',
-    address: localStorage.getItem('userAddress') || '123 Ayala Ave, Makati City',
-    dob: localStorage.getItem('userDOB') || '',
-  });
+  const [formData, setFormData] = useState(() => ({
+    name: getStoredValue('userName') || '',
+    email: getStoredValue('userEmail') || 'guest@pakiship.ph',
+    phone: getStoredValue('userPhone') || '09123456789',
+    address: getStoredValue('userAddress') || '123 Ayala Ave, Makati City',
+    dob: getStoredValue('userDOB') || '',
+  }));
 
-  const [preferences, setPreferences] = useState({
-    emailNotifications: localStorage.getItem('emailNotifications') === 'true',
-    smsUpdates: localStorage.getItem('smsUpdates') === 'true',
-    autoExtend: localStorage.getItem('autoExtend') === 'true',
-  });
+  const [preferences, setPreferences] = useState(() => ({
+    emailNotifications: getStoredValue('emailNotifications') === 'true',
+    smsUpdates: getStoredValue('smsUpdates') === 'true',
+    autoExtend: getStoredValue('autoExtend') === 'true',
+  }));
 
   const [passwordData, setPasswordData] = useState({ current: '', new: '' });
-  const [idUploaded, setIdUploaded] = useState(localStorage.getItem('discountIdUploaded') === 'true');
-
-  // Customer stats from localStorage or defaults
-  const customerStats = [
-    { label: 'Total Bookings', value: localStorage.getItem('totalBookings') || '12' },
-    { label: 'Active Bookings', value: localStorage.getItem('activeBookings') || '1' },
-    { label: 'Saved Vehicles', value: localStorage.getItem('savedVehicles') || '2' },
-    { label: 'Account Created', value: localStorage.getItem('accountCreated') || 'Jan 2025' },
-  ];
-
-  // Recent activity
-  const recentActivity = [
-    { text: 'Booked parking slot A-12 at SM Megamall', time: '2 hours ago' },
-    { text: 'Updated profile picture', time: '1 day ago' },
-    { text: 'Added new vehicle (Toyota Vios - ABC 1234)', time: '3 days ago' },
-  ];
+  const [idUploaded, setIdUploaded] = useState(
+    () => getStoredValue('discountIdUploaded') === 'true',
+  );
+  const [discountStatus, setDiscountStatus] = useState<'not_uploaded' | 'pending' | 'verified' | 'rejected'>('not_uploaded');
+  const [discountIdType, setDiscountIdType] = useState('');
+  const [discountIdFileUrl, setDiscountIdFileUrl] = useState<string | null>(null);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(
+    () => getStoredValue('twoFactorEnabled') === 'true',
+  );
+  const [passwordUpdatedAt, setPasswordUpdatedAt] = useState<string | null>(
+    () => getStoredValue('passwordUpdatedAt'),
+  );
+  const [customerStats, setCustomerStats] = useState([
+    { label: 'Total Bookings', value: '0' },
+    { label: 'Active Bookings', value: '0' },
+    { label: 'Saved Vehicles', value: '0' },
+    { label: 'Account Created', value: 'Unknown' },
+  ]);
+  const [recentActivity, setRecentActivity] = useState<Array<{ text: string; time: string }>>([]);
 
   // Initials logic if no photo exists
   const userInitials = formData.name 
     ? formData.name.trim().split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) 
     : 'U';
 
+  const applyProfileResponse = (result: CustomerProfileResponse) => {
+    setProfilePicture(result.profile.profilePicture);
+    setFormData({
+      name: result.profile.fullName || '',
+      email: result.profile.email || '',
+      phone: result.profile.phone || '',
+      address: result.profile.address || '',
+      dob: result.profile.dob || '',
+    });
+    setPreferences(result.profile.preferences);
+    setIdUploaded(result.profile.discountIdUploaded);
+    setDiscountStatus(result.profile.discountIdStatus || 'not_uploaded');
+    setDiscountIdType(result.profile.discountIdType || '');
+    setDiscountIdFileUrl(result.profile.discountIdFileUrl || null);
+    setTwoFactorEnabled(Boolean(result.profile.twoFactorEnabled));
+    setPasswordUpdatedAt(result.profile.passwordUpdatedAt || null);
+    setCustomerStats([
+      { label: 'Total Bookings', value: String(result.stats.totalBookings) },
+      { label: 'Active Bookings', value: String(result.stats.activeBookings) },
+      { label: 'Saved Vehicles', value: String(result.stats.savedVehicles) },
+      { label: 'Account Created', value: result.stats.accountCreated },
+    ]);
+    setRecentActivity(
+      result.activity.map((item) => ({
+        text: item.description || item.title,
+        time: item.timeLabel,
+      })),
+    );
+    syncCustomerProfileToStorage(result.profile);
+  };
+
+  useEffect(() => {
+    const loadCustomerProfile = async () => {
+      try {
+        const result = await fetchCustomerProfile();
+        applyProfileResponse(result);
+      } catch {
+        toast.error('Unable to load your profile right now.');
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    void loadCustomerProfile();
+  }, []);
+
   // --- HANDLERS ---
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const loadingToast = toast.loading('Saving changes...');
-    
-    setTimeout(() => {
-      localStorage.setItem('userName', formData.name);
-      localStorage.setItem('userEmail', formData.email);
-      localStorage.setItem('userPhone', formData.phone);
-      localStorage.setItem('userAddress', formData.address);
-      localStorage.setItem('userDOB', formData.dob);
-      
-      // Save preferences
-      localStorage.setItem('emailNotifications', String(preferences.emailNotifications));
-      localStorage.setItem('smsUpdates', String(preferences.smsUpdates));
-      localStorage.setItem('autoExtend', String(preferences.autoExtend));
-      
-      // Dispatch event so other components (like Home) know to update
-      window.dispatchEvent(new Event('storage'));
-      
+
+    try {
+      const result = await updateCustomerProfile({
+        fullName: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        dob: formData.dob,
+        preferences,
+      });
+
+      applyProfileResponse(result);
       toast.dismiss(loadingToast);
       toast.success('Profile updated successfully!');
       setIsEditing(false);
-    }, 1000);
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error(
+        error instanceof Error ? error.message : 'Unable to save profile changes.',
+      );
+    }
   };
 
   const handleProfileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        setProfilePicture(base64);
-        localStorage.setItem('customerProfilePicture', base64);
-        
-        // Immediate sync trigger
-        window.dispatchEvent(new Event('storage'));
-        toast.success('Photo updated!');
-      };
-      reader.readAsDataURL(file);
+      setIsUploadingPhoto(true);
+      const loadingToast = toast.loading('Uploading photo...');
+      void uploadCustomerProfilePicture(file)
+        .then((result) => {
+          setProfilePicture(result.profilePicture);
+          localStorage.setItem('customerProfilePicture', result.profilePicture);
+          window.dispatchEvent(new Event('storage'));
+          toast.dismiss(loadingToast);
+          toast.success('Profile photo updated.');
+        })
+        .catch((error) => {
+          toast.dismiss(loadingToast);
+          toast.error(error instanceof Error ? error.message : 'Unable to upload your photo.');
+        })
+        .finally(() => {
+          setIsUploadingPhoto(false);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        });
     }
   };
 
@@ -111,12 +195,27 @@ export function EditProfilePage() {
     const file = e.target.files?.[0];
     if (file) {
       const loadingToast = toast.loading('Uploading ID...');
-      setTimeout(() => {
-        setIdUploaded(true);
-        localStorage.setItem('discountIdUploaded', 'true');
-        toast.dismiss(loadingToast);
-        toast.success('ID uploaded successfully! Your discount will be applied automatically.');
-      }, 1500);
+      setIsUploadingDiscountId(true);
+      void uploadCustomerDiscountId(file)
+        .then((result) => {
+          setIdUploaded(result.discountIdUploaded);
+          setDiscountStatus(result.discountIdStatus);
+          setDiscountIdType(result.discountIdType);
+          setDiscountIdFileUrl(result.discountIdFileUrl);
+          localStorage.setItem('discountIdUploaded', 'true');
+          toast.dismiss(loadingToast);
+          toast.success('ID uploaded successfully. We\'ll review it shortly.');
+        })
+        .catch((error) => {
+          toast.dismiss(loadingToast);
+          toast.error(error instanceof Error ? error.message : 'Unable to upload your ID.');
+        })
+        .finally(() => {
+          setIsUploadingDiscountId(false);
+          if (idFileInputRef.current) {
+            idFileInputRef.current.value = '';
+          }
+        });
     }
   };
 
@@ -125,6 +224,84 @@ export function EditProfilePage() {
       ...prev,
       [key]: !prev[key]
     }));
+  };
+
+  const openTwoFactorModal = async () => {
+    setShow2FAModal(true);
+    setTwoFactorCode('');
+
+    if (!twoFactorEnabled) {
+      setIsPreparingTwoFactor(true);
+      try {
+        const setup = await setupCustomerTwoFactor();
+        setTwoFactorSetup(setup);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Unable to start two-factor setup.');
+        setShow2FAModal(false);
+      } finally {
+        setIsPreparingTwoFactor(false);
+      }
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!passwordData.current || !passwordData.new) {
+      toast.error('Enter both your current and new passwords.');
+      return;
+    }
+
+    setIsSubmittingPassword(true);
+    const loadingToast = toast.loading('Updating password...');
+
+    try {
+      const result = await changeCustomerPassword(passwordData.current, passwordData.new);
+      applyProfileResponse(result);
+      toast.dismiss(loadingToast);
+      toast.success('Password updated successfully.');
+      setShowPasswordModal(false);
+      setPasswordData({ current: '', new: '' });
+      setShowPass({ current: false, new: false });
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error(error instanceof Error ? error.message : 'Unable to update your password.');
+    } finally {
+      setIsSubmittingPassword(false);
+    }
+  };
+
+  const handleTwoFactorSubmit = async () => {
+    if (!twoFactorCode.trim()) {
+      toast.error('Enter the 6-digit code from your authenticator app.');
+      return;
+    }
+
+    setIsSubmittingTwoFactor(true);
+    const loadingToast = toast.loading(
+      twoFactorEnabled ? 'Turning off 2FA...' : 'Turning on 2FA...',
+    );
+
+    try {
+      const result = twoFactorEnabled
+        ? await disableCustomerTwoFactor(twoFactorCode)
+        : await enableCustomerTwoFactor(twoFactorCode);
+      applyProfileResponse(result);
+      toast.dismiss(loadingToast);
+      toast.success(
+        twoFactorEnabled
+          ? 'Two-factor authentication disabled.'
+          : 'Two-factor authentication enabled.',
+      );
+      setShow2FAModal(false);
+      setTwoFactorCode('');
+      setTwoFactorSetup(null);
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error(
+        error instanceof Error ? error.message : 'Unable to update two-factor authentication.',
+      );
+    } finally {
+      setIsSubmittingTwoFactor(false);
+    }
   };
 
   return (
@@ -155,11 +332,13 @@ export function EditProfilePage() {
             </div>
             <div className="flex gap-3 mt-8">
               <Button onClick={() => setShowPasswordModal(false)} variant="outline" className="flex-1 rounded-xl">Cancel</Button>
-              <Button className="flex-1 bg-[#041614] hover:bg-[#123E3A] text-white rounded-xl" onClick={() => {
-                toast.success('Password updated successfully!');
-                setShowPasswordModal(false);
-                setPasswordData({ current: '', new: '' });
-              }}>Update</Button>
+              <Button
+                className="flex-1 bg-[#041614] hover:bg-[#123E3A] text-white rounded-xl"
+                onClick={handlePasswordChange}
+                disabled={isSubmittingPassword}
+              >
+                {isSubmittingPassword ? 'Updating...' : 'Update'}
+              </Button>
             </div>
           </div>
         </div>
@@ -170,16 +349,66 @@ export function EditProfilePage() {
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-8 border border-[#39B5A8]/20">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-black text-[#041614]">Enable 2FA</h3>
+              <h3 className="text-xl font-black text-[#041614]">
+                {twoFactorEnabled ? 'Disable 2FA' : 'Enable 2FA'}
+              </h3>
               <button onClick={() => setShow2FAModal(false)} className="text-gray-400 hover:text-red-500 transition-colors">✕</button>
             </div>
-            <p className="text-sm text-gray-600 mb-6">Two-factor authentication adds an extra layer of security to your account. You'll receive a code via SMS when logging in.</p>
-            <div className="flex gap-3">
+            {twoFactorEnabled ? (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Enter the current 6-digit code from your authenticator app to turn off two-factor authentication.
+                </p>
+                <Input
+                  value={twoFactorCode}
+                  onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
+                  className="rounded-xl text-center tracking-[0.4em] font-bold"
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Add this account to Google Authenticator, Microsoft Authenticator, or Authy, then enter the 6-digit code to finish setup.
+                </p>
+                {isPreparingTwoFactor ? (
+                  <p className="text-sm text-gray-500">Preparing your security key...</p>
+                ) : (
+                  <>
+                    <div className="rounded-2xl bg-[#F0F9F8] p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#39B5A8]">Setup Key</p>
+                      <p className="mt-2 break-all font-mono text-sm text-[#041614]">
+                        {twoFactorSetup?.secret || 'Unavailable'}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 break-all">
+                      If your authenticator app supports URI import, use:
+                      <br />
+                      {twoFactorSetup?.otpauthUri || 'Unavailable'}
+                    </p>
+                    <Input
+                      value={twoFactorCode}
+                      onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456"
+                      className="rounded-xl text-center tracking-[0.4em] font-bold"
+                    />
+                  </>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3 mt-6">
               <Button onClick={() => setShow2FAModal(false)} variant="outline" className="flex-1 rounded-xl">Cancel</Button>
-              <Button className="flex-1 bg-[#39B5A8] hover:bg-[#2D8F85] text-white rounded-xl" onClick={() => {
-                toast.success('2FA enabled successfully!');
-                setShow2FAModal(false);
-              }}>Enable 2FA</Button>
+              <Button
+                className="flex-1 bg-[#39B5A8] hover:bg-[#2D8F85] text-white rounded-xl"
+                onClick={handleTwoFactorSubmit}
+                disabled={isPreparingTwoFactor || isSubmittingTwoFactor}
+              >
+                {isSubmittingTwoFactor
+                  ? 'Saving...'
+                  : twoFactorEnabled
+                    ? 'Disable 2FA'
+                    : 'Enable 2FA'}
+              </Button>
             </div>
           </div>
         </div>
@@ -217,12 +446,18 @@ export function EditProfilePage() {
                     <span className="text-4xl font-black text-white">{userInitials}</span>
                   )}
                 </div>
-                <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 bg-[#FF6B35] text-white p-3 rounded-2xl shadow-xl hover:bg-[#e55a28] border-2 border-white transition-all">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-2 -right-2 bg-[#FF6B35] text-white p-3 rounded-2xl shadow-xl hover:bg-[#e55a28] border-2 border-white transition-all disabled:opacity-60"
+                  disabled={isUploadingPhoto}
+                >
                   <Camera className="w-5 h-5" />
                 </button>
                 <input type="file" ref={fileInputRef} onChange={handleProfileUpload} className="hidden" accept="image/*" />
               </div>
-              <h2 className="mt-6 text-2xl font-black font-bold text-[#041614] truncate">{formData.name || 'New User'}</h2>
+              <h2 className="mt-6 text-2xl font-black font-bold text-[#041614] truncate">
+                {isLoadingProfile ? 'Loading...' : formData.name || 'New User'}
+              </h2>
               <p className="text-sm text-[#39B5A8] font-bold mt-1">Regular Customer</p>
               <div className="flex flex-col gap-2 mt-4 items-center">
               </div>
@@ -256,12 +491,19 @@ export function EditProfilePage() {
                   <Lock className="w-4 h-4 text-[#39B5A8]" />
                   <span className="text-sm font-bold text-[#1A5D56]">Change Password</span>
                 </button>
+                <p className="px-3 text-xs text-gray-500">
+                  {passwordUpdatedAt ? `Last updated ${new Date(passwordUpdatedAt).toLocaleDateString()}` : 'Password has not been changed yet.'}
+                </p>
                 <button
-                  onClick={() => setShow2FAModal(true)} 
+                  onClick={() => {
+                    void openTwoFactorModal();
+                  }}
                   className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[#F0F9F8] transition-all text-left group"
                 >
                   <ShieldCheck className="w-4 h-4 text-[#39B5A8]" />
-                  <span className="text-sm font-bold text-[#1A5D56]">Enable 2FA</span>
+                  <span className="text-sm font-bold text-[#1A5D56]">
+                    {twoFactorEnabled ? '2FA Enabled' : 'Enable 2FA'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -364,8 +606,19 @@ export function EditProfilePage() {
                     <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center">
                       <ShieldCheck className="w-8 h-8 text-emerald-500" />
                     </div>
-                    <p className="font-bold text-[#1A5D56]">ID Verified</p>
-                    <p className="text-xs text-gray-500">Your discount has been applied</p>
+                    <p className="font-bold text-[#1A5D56]">
+                      {discountStatus === 'verified' ? 'ID Verified' : 'ID Submitted'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {discountStatus === 'verified'
+                        ? 'Your discount has been applied'
+                        : discountStatus === 'pending'
+                          ? 'Your ID is pending verification'
+                          : 'Your uploaded ID is on file'}
+                    </p>
+                    {discountIdFileUrl && (
+                      <p className="text-[11px] text-gray-400">{discountIdFileUrl}</p>
+                    )}
                     <Button 
                       type="button"
                       onClick={(e) => {
@@ -374,8 +627,9 @@ export function EditProfilePage() {
                       }}
                       variant="outline"
                       className="mt-2 rounded-xl border-[#39B5A8]/20"
+                      disabled={isUploadingDiscountId}
                     >
-                      Upload New ID
+                      {isUploadingDiscountId ? 'Uploading...' : 'Upload New ID'}
                     </Button>
                   </div>
                 ) : (
@@ -388,8 +642,9 @@ export function EditProfilePage() {
                     <Button 
                       type="button"
                       className="mt-3 bg-[#1A5D56] hover:bg-[#123E3A] text-white rounded-2xl"
+                      disabled={isUploadingDiscountId}
                     >
-                      Upload ID
+                      {isUploadingDiscountId ? 'Uploading...' : 'Upload ID'}
                     </Button>
                   </div>
                 )}
