@@ -21,7 +21,7 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
         const supabase = this.supabaseService.createAdminClient();
         return supabase
             .from("parcel_drafts")
-            .select("id, user_id, step_completed, status")
+            .select("id, user_id, step_completed, status, tracking_number")
             .eq("id", draftId)
             .eq("user_id", userId)
             .single();
@@ -62,6 +62,7 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
           duration_text,
           step_completed,
           status,
+          tracking_number,
           parcel_draft_items (
             id,
             size,
@@ -151,7 +152,93 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
             .from("parcel_drafts")
             .update(patch)
             .eq("id", draftId)
-            .eq("user_id", userId);
+            .eq("user_id", userId)
+            .select("id, status, tracking_number")
+            .single();
+    }
+    async findOwnedSubmittedDraftByTrackingNumber(userId, trackingNumber) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          created_at,
+          updated_at
+        `)
+            .eq("user_id", userId)
+            .eq("tracking_number", trackingNumber)
+            .eq("status", "submitted")
+            .single();
+    }
+    async listOwnedHistory(userId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          created_at,
+          updated_at,
+          parcel_draft_items (
+            id,
+            item_type,
+            delivery_guarantee,
+            quantity,
+            weight_text
+          )
+        `)
+            .eq("user_id", userId)
+            .in("status", ["submitted", "cancelled"])
+            .order("created_at", { ascending: false });
+    }
+    async findOwnedHistoryByTrackingNumber(userId, trackingNumber) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          created_at,
+          updated_at,
+          parcel_draft_items (
+            id,
+            item_type,
+            delivery_guarantee,
+            quantity,
+            weight_text
+          )
+        `)
+            .eq("user_id", userId)
+            .eq("tracking_number", trackingNumber)
+            .single();
     }
 };
 exports.ParcelDraftsRepository = ParcelDraftsRepository;

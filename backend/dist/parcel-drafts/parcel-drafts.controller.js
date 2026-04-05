@@ -26,6 +26,15 @@ let ParcelDraftsController = class ParcelDraftsController {
     saveStepOne(request, body) {
         return this.parcelDraftsService.saveRouteDetails(getSessionUser(request), body);
     }
+    getTrackingDetails(request, trackingNumber) {
+        return this.parcelDraftsService.getTrackingDetails(getSessionUser(request), trackingNumber);
+    }
+    getHistory(request) {
+        return this.parcelDraftsService.getHistory(getSessionUser(request));
+    }
+    getHistoryDetails(request, trackingNumber) {
+        return this.parcelDraftsService.getHistoryDetails(getSessionUser(request), trackingNumber);
+    }
     getDraft(request, draftId, itemsLimit) {
         const parsedLimit = Number(itemsLimit ?? "");
         return this.parcelDraftsService.getDraftDetails(getSessionUser(request), draftId, Number.isFinite(parsedLimit) ? parsedLimit : undefined);
@@ -60,6 +69,29 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], ParcelDraftsController.prototype, "saveStepOne", null);
+__decorate([
+    (0, common_1.Get)("track/:trackingNumber"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)("trackingNumber")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "getTrackingDetails", null);
+__decorate([
+    (0, common_1.Get)("history"),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "getHistory", null);
+__decorate([
+    (0, common_1.Get)("history/:trackingNumber"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)("trackingNumber")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "getHistoryDetails", null);
 __decorate([
     (0, common_1.Get)(":draftId"),
     __param(0, (0, common_1.Req)()),

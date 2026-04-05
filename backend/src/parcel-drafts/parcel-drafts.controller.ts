@@ -32,6 +32,33 @@ export class ParcelDraftsController {
     );
   }
 
+  @Get("track/:trackingNumber")
+  getTrackingDetails(
+    @Req() request: Request,
+    @Param("trackingNumber") trackingNumber: string,
+  ) {
+    return this.parcelDraftsService.getTrackingDetails(
+      getSessionUser(request),
+      trackingNumber,
+    );
+  }
+
+  @Get("history")
+  getHistory(@Req() request: Request) {
+    return this.parcelDraftsService.getHistory(getSessionUser(request));
+  }
+
+  @Get("history/:trackingNumber")
+  getHistoryDetails(
+    @Req() request: Request,
+    @Param("trackingNumber") trackingNumber: string,
+  ) {
+    return this.parcelDraftsService.getHistoryDetails(
+      getSessionUser(request),
+      trackingNumber,
+    );
+  }
+
   @Get(":draftId")
   getDraft(
     @Req() request: Request,

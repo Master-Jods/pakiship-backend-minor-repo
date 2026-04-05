@@ -6,6 +6,95 @@ export declare class ParcelDraftsController {
     saveStepOne(request: Request, body: Record<string, unknown>): Promise<{
         draftId: any;
     }>;
+    getTrackingDetails(request: Request, trackingNumber: string): Promise<{
+        trackingNumber: any;
+        status: any;
+        origin: any;
+        destination: any;
+        estimatedDelivery: any;
+        distance: any;
+        driver: {
+            name: string;
+            phone: string;
+            vehicleType: string;
+            plateNumber: string;
+        };
+        timeline: {
+            status: string;
+            location: any;
+            timestamp: string;
+            completed: boolean;
+        }[];
+    }>;
+    getHistory(request: Request): Promise<{
+        transactions: {
+            id: any;
+            draftId: any;
+            trackingNumber: any;
+            date: string;
+            createdAt: any;
+            from: any;
+            to: any;
+            status: string;
+            rawStatus: any;
+            type: string;
+            isLive: boolean;
+            bucket: "active" | "completed";
+            amount: any;
+            distance: any;
+            duration: any;
+            totalParcels: any;
+        }[];
+    }>;
+    getHistoryDetails(request: Request, trackingNumber: string): Promise<{
+        transaction: {
+            id: any;
+            trackingNumber: any;
+            date: string;
+            createdAt: any;
+            from: any;
+            to: any;
+            status: string;
+            rawStatus: any;
+            type: string;
+            isLive: boolean;
+            amount: any;
+            distance: any;
+            duration: any;
+            totalParcels: any;
+        };
+        details: {
+            sender: {
+                name: any;
+                phone: any;
+                address: any;
+            };
+            receiver: {
+                name: any;
+                phone: any;
+                address: any;
+            };
+            parcel: {
+                weight: any;
+                dimensions: string;
+                description: string;
+                specialInstructions: string;
+                totalParcels: any;
+            };
+            driver: {
+                name: string;
+                phone: string;
+                vehicle: string;
+                rating: any;
+            };
+            timeline: {
+                status: string;
+                time: string;
+                location: any;
+                completed: boolean;
+            }[];
+        };
+    }>;
     getDraft(request: Request, draftId: string, itemsLimit?: string): Promise<{
         draft: {
             id: any;
@@ -21,6 +110,7 @@ export declare class ParcelDraftsController {
             duration: any;
             stepCompleted: any;
             status: any;
+            trackingNumber: any;
             items: {
                 id: any;
                 size: any;
@@ -71,7 +161,7 @@ export declare class ParcelDraftsController {
     }>;
     completeBooking(request: Request, draftId: string, body: Record<string, unknown>): Promise<{
         draftId: string;
-        trackingNumber: string;
+        trackingNumber: any;
         stepCompleted: number;
         status: string;
         booking: {

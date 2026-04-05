@@ -15,47 +15,8 @@ import {
 import { useNavigate } from "react-router";
 import { CustomerPageHeader } from "../components/CustomerPageHeader";
 import MapPreview from "../components/MapPreview";
+import { apiFetch } from "@/lib/api-client";
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
-
-// This simulates the shared data source from AllDeliveries
-const allDeliveries = [
-  {
-    id: "PKS-2024-001",
-    location: "Makati City",
-    time: "15 mins away",
-    status: "In Transit",
-  },
-  {
-    id: "PKS-2024-002",
-    location: "Quezon City",
-    time: "30 mins away",
-    status: "Out for Delivery",
-  },
-  {
-    id: "PKS-2024-003",
-    location: "BGC, Taguig",
-    time: "1 hour away",
-    status: "In Transit",
-  },
-  {
-    id: "PKS-2024-007",
-    location: "Pasig City",
-    time: "2 hours away",
-    status: "Picked Up",
-  },
-  {
-    id: "PKS-2024-008",
-    location: "Mandaluyong",
-    time: "45 mins away",
-    status: "Out for Delivery",
-  },
-  {
-    id: "PKS-2024-009",
-    location: "Manila",
-    time: "20 mins away",
-    status: "In Transit",
-  },
-];
 
 export function TrackPackagePage() {
   const navigate = useNavigate();
@@ -71,71 +32,26 @@ export function TrackPackagePage() {
     setError(null);
     setTrackingResult(null);
 
-    // Artificial delay for realism
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Find the parcel in our "database"
-    const foundParcel = allDeliveries.find(
-      (p) => p.id.toLowerCase() === id.trim().toLowerCase(),
-    );
-
-    if (!foundParcel) {
-      setError(
-        "Parcel Not Found: We couldn't find a package with that number.",
+    try {
+      const response = await apiFetch(
+        `/api/parcel-drafts/track/${encodeURIComponent(id.trim())}`,
       );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(
+          result.message ||
+            "Parcel Not Found: We couldn't find a package with that number.",
+        );
+        return;
+      }
+
+      setTrackingResult(result);
+    } catch {
+      setError("Unable to load tracking details right now.");
+    } finally {
       setIsSearching(false);
-      return;
     }
-
-    // Map the simple delivery object to the detailed tracking view
-    const detailedData = {
-      trackingNumber: foundParcel.id,
-      status: foundParcel.status,
-      origin: "PakiShip Central Hub",
-      destination: foundParcel.location,
-      estimatedDelivery:
-        foundParcel.time === "Pending"
-          ? "Calculating..."
-          : foundParcel.time,
-      driver: {
-        name: "Pedro Reyes",
-        phone: "+63 912 345 6789",
-        vehicleType: "Motorcycle",
-        plateNumber: "ABC 1234",
-      },
-      timeline: [
-        {
-          status: "Package Received",
-          location: "PakiShip Hub - Manila",
-          timestamp: "08:30 AM",
-          completed: true,
-        },
-        {
-          status: "Picked Up",
-          location: "Sorted at Facility",
-          timestamp: "10:15 AM",
-          completed: foundParcel.status !== "Picked Up",
-        },
-        {
-          status: "In Transit",
-          location: "En route to destination",
-          timestamp: "01:45 PM",
-          completed: [
-            "In Transit",
-            "Out for Delivery",
-          ].includes(foundParcel.status),
-        },
-        {
-          status: "Out for Delivery",
-          location: foundParcel.location,
-          timestamp: "Active",
-          completed: foundParcel.status === "Out for Delivery",
-        },
-      ],
-    };
-
-    setTrackingResult(detailedData);
-    setIsSearching(false);
   };
 
   const handleTrack = (e: React.FormEvent) => {

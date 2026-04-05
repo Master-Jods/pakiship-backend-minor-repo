@@ -7,6 +7,7 @@ export declare class ParcelDraftsRepository {
         user_id: any;
         step_completed: any;
         status: any;
+        tracking_number: any;
     }>>;
     saveStepOneDraft(draftId: string | null, userId: string, payload: Record<string, unknown>): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<{
         id: any;
@@ -33,6 +34,7 @@ export declare class ParcelDraftsRepository {
             duration_text: any;
             step_completed: any;
             status: any;
+            tracking_number: any;
             parcel_draft_items: {
                 id: any;
                 size: any;
@@ -81,5 +83,68 @@ export declare class ParcelDraftsRepository {
     }[]>>;
     updateDraftItemQuantity(draftId: string, itemId: string, quantity: number): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<null>>;
     deleteDraftItem(draftId: string, itemId: string): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<null>>;
-    updateOwnedDraftState(draftId: string, userId: string, patch: Record<string, unknown>): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<null>>;
+    updateOwnedDraftState(draftId: string, userId: string, patch: Record<string, unknown>): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<{
+        id: any;
+        status: any;
+        tracking_number: any;
+    }>>;
+    findOwnedSubmittedDraftByTrackingNumber(userId: string, trackingNumber: string): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<{
+        id: any;
+        tracking_number: any;
+        pickup_address: any;
+        delivery_address: any;
+        distance_text: any;
+        duration_text: any;
+        status: any;
+        sender_name: any;
+        sender_phone: any;
+        receiver_name: any;
+        receiver_phone: any;
+        created_at: any;
+        updated_at: any;
+    }>>;
+    listOwnedHistory(userId: string): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<{
+        id: any;
+        tracking_number: any;
+        pickup_address: any;
+        delivery_address: any;
+        distance_text: any;
+        duration_text: any;
+        status: any;
+        sender_name: any;
+        sender_phone: any;
+        receiver_name: any;
+        receiver_phone: any;
+        created_at: any;
+        updated_at: any;
+        parcel_draft_items: {
+            id: any;
+            item_type: any;
+            delivery_guarantee: any;
+            quantity: any;
+            weight_text: any;
+        }[];
+    }[]>>;
+    findOwnedHistoryByTrackingNumber(userId: string, trackingNumber: string): Promise<import("@supabase/postgrest-js").PostgrestSingleResponse<{
+        id: any;
+        tracking_number: any;
+        pickup_address: any;
+        delivery_address: any;
+        distance_text: any;
+        duration_text: any;
+        status: any;
+        sender_name: any;
+        sender_phone: any;
+        receiver_name: any;
+        receiver_phone: any;
+        created_at: any;
+        updated_at: any;
+        parcel_draft_items: {
+            id: any;
+            item_type: any;
+            delivery_guarantee: any;
+            quantity: any;
+            weight_text: any;
+        }[];
+    }>>;
 }

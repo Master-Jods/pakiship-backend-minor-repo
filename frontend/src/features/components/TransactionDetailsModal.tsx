@@ -1,59 +1,15 @@
 import { X, Package, MapPin, Calendar, Clock, User, Phone, Truck, CheckCircle2, ArrowRight } from "lucide-react";
-
-interface Transaction {
-  id: string;
-  date: string;
-  from: string;
-  to: string;
-  status: string;
-  amount: string;
-  type: string;
-  isLive: boolean;
-}
+import type { HistoryDetailsResponse } from "@/lib/history";
 
 interface TransactionDetailsModalProps {
-  transaction: Transaction | null;
+  transaction: HistoryDetailsResponse | null;
   onClose: () => void;
 }
 
 export function TransactionDetailsModal({ transaction, onClose }: TransactionDetailsModalProps) {
   if (!transaction) return null;
-
-  // Mock detailed data based on transaction
-  const details = {
-    sender: {
-      name: "Juan Dela Cruz",
-      phone: "+63 912 345 6789",
-      address: transaction.from,
-    },
-    receiver: {
-      name: "Maria Santos",
-      phone: "+63 923 456 7890",
-      address: transaction.to,
-    },
-    parcel: {
-      weight: "2.5 kg",
-      dimensions: "30x20x15 cm",
-      description: "Documents and Small Items",
-      specialInstructions: transaction.type.includes("Fragile") ? "Handle with care - Fragile items" : "Standard handling",
-    },
-    driver: transaction.isLive ? {
-      name: "Pedro Reyes",
-      phone: "+63 934 567 8901",
-      vehicle: "Motorcycle - ABC 1234",
-      rating: 4.9,
-    } : null,
-    timeline: transaction.isLive ? [
-      { status: "Package Received", time: `${transaction.date} - 2:30 PM`, location: "PakiShip Hub - Makati", completed: true },
-      { status: "Out for Delivery", time: `${transaction.date} - 3:15 PM`, location: "Driver assigned", completed: true },
-      { status: "In Transit", time: `${transaction.date} - 3:45 PM`, location: "En route to destination", completed: true },
-      { status: "Delivered", time: "Pending", location: transaction.to, completed: false },
-    ] : [
-      { status: "Package Received", time: `${transaction.date} - 2:30 PM`, location: "PakiShip Hub", completed: true },
-      { status: "In Transit", time: `${transaction.date} - 3:15 PM`, location: "En route", completed: true },
-      { status: "Delivered", time: `${transaction.date} - 5:20 PM`, location: transaction.to, completed: true },
-    ],
-  };
+  const summary = transaction.transaction;
+  const details = transaction.details;
 
   return (
     <>
@@ -93,12 +49,12 @@ export function TransactionDetailsModal({ transaction, onClose }: TransactionDet
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <div className={`p-3 rounded-xl ${transaction.isLive ? 'bg-[#39B5A8]/10' : 'bg-slate-100'}`}>
-                    <Package className={`w-6 h-6 ${transaction.isLive ? 'text-[#39B5A8]' : 'text-slate-400'}`} />
+                  <div className={`p-3 rounded-xl ${summary.isLive ? 'bg-[#39B5A8]/10' : 'bg-slate-100'}`}>
+                    <Package className={`w-6 h-6 ${summary.isLive ? 'text-[#39B5A8]' : 'text-slate-400'}`} />
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-[#1A5D56]">{transaction.id}</h2>
-                    <p className="text-[10px] font-bold text-[#39B5A8] uppercase tracking-wider">{transaction.type}</p>
+                    <h2 className="text-xl sm:text-2xl font-bold text-[#1A5D56]">{summary.id}</h2>
+                    <p className="text-[10px] font-bold text-[#39B5A8] uppercase tracking-wider">{summary.type}</p>
                   </div>
                 </div>
               </div>
@@ -113,13 +69,13 @@ export function TransactionDetailsModal({ transaction, onClose }: TransactionDet
             {/* Status Badge */}
             <div className="flex items-center gap-3 mt-4">
               <span className={`text-[10px] font-bold uppercase px-4 py-2 rounded-xl ${
-                transaction.isLive 
+                summary.isLive 
                   ? 'bg-[#39B5A8] text-white shadow-lg shadow-[#39B5A8]/20' 
                   : 'bg-slate-100 text-slate-500'
               }`}>
-                {transaction.status}
+                {summary.status}
               </span>
-              {transaction.isLive && (
+              {summary.isLive && (
                 <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold px-3 py-1.5 rounded-full border border-emerald-100">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
                   LIVE TRACKING
@@ -212,7 +168,9 @@ export function TransactionDetailsModal({ transaction, onClose }: TransactionDet
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] text-white/60 font-bold mb-1 uppercase">Rating</p>
-                    <p className="text-2xl font-bold text-[#39B5A8]">★ {details.driver.rating}</p>
+                    <p className="text-2xl font-bold text-[#39B5A8]">
+                      {details.driver.rating ? `★ ${details.driver.rating}` : "TBD"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -264,18 +222,18 @@ export function TransactionDetailsModal({ transaction, onClose }: TransactionDet
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-slate-600">Delivery Fee</span>
-                  <span className="font-bold text-slate-700">{transaction.amount}</span>
+                  <span className="font-bold text-slate-700">{summary.amount || "Pending"}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-slate-600">Date</span>
-                  <span className="font-bold text-slate-700">{transaction.date}</span>
+                  <span className="font-bold text-slate-700">{summary.date}</span>
                 </div>
                 <div className="border-t border-slate-200 pt-3 mt-3">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-[#1A5D56]">Total Amount</span>
                     <div className="text-right">
-                      <span className="text-2xl font-bold text-[#39B5A8]">{transaction.amount}</span>
-                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Paid via PakiPay</p>
+                      <span className="text-2xl font-bold text-[#39B5A8]">{summary.amount || "Pending"}</span>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-wider">Payment details not stored yet</p>
                     </div>
                   </div>
                 </div>
@@ -292,7 +250,7 @@ export function TransactionDetailsModal({ transaction, onClose }: TransactionDet
               >
                 Close
               </button>
-              {transaction.isLive && (
+              {summary.isLive && (
                 <button
                   className="flex-1 py-4 bg-[#39B5A8] text-white rounded-2xl font-bold hover:bg-[#1A5D56] transition-all shadow-lg shadow-[#39B5A8]/20 flex items-center justify-center gap-2 active:scale-95"
                   onClick={() => {

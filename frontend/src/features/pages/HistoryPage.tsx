@@ -1,8 +1,14 @@
 import { ArrowLeft, Search, Package, ChevronRight, Calendar, MapPin, History, Clock, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CustomerPageHeader } from "../components/CustomerPageHeader";
 import { TransactionDetailsModal } from "../components/TransactionDetailsModal";
+import {
+  fetchCustomerHistory,
+  fetchCustomerHistoryDetails,
+  type HistoryDetailsResponse,
+  type HistoryTransaction,
+} from "@/lib/history";
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
 const mascotImg = "/assets/873d403bd2add17b06645c58ef3cc7daba517b30.png";
 
@@ -10,50 +16,24 @@ export function HistoryPage() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "active" | "completed">("all");
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [transactions, setTransactions] = useState<HistoryTransaction[]>([]);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<HistoryDetailsResponse | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
-  const transactions = [
-    {
-      id: "PKS-2024-001",
-      date: "Feb 17, 2026",
-      from: "Makati City",
-      to: "Quezon City",
-      status: "In Transit",
-      amount: "₱150.00",
-      type: "Express Delivery",
-      isLive: true,
-    },
-    {
-      id: "PKS-2024-002",
-      date: "Feb 15, 2026",
-      from: "Manila",
-      to: "Pasig City",
-      status: "Delivered",
-      amount: "₱120.00",
-      type: "Standard",
-      isLive: false,
-    },
-    {
-      id: "PKS-2024-003",
-      date: "Feb 12, 2026",
-      from: "Quezon City",
-      to: "Caloocan City",
-      status: "Delivered",
-      amount: "₱180.00",
-      type: "Fragile Handle",
-      isLive: false,
-    },
-    {
-      id: "PKS-2024-004",
-      date: "Feb 10, 2026",
-      from: "BGC",
-      to: "Alabang",
-      status: "Delivered",
-      amount: "₱250.00",
-      type: "Express Delivery",
-      isLive: false,
-    },
-  ];
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const result = await fetchCustomerHistory();
+        setTransactions(result.transactions);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    void loadHistory();
+  }, []);
 
   const filteredTransactions = transactions.filter((t) => {
     const matchesSearch = 
@@ -62,9 +42,23 @@ export function HistoryPage() {
       t.to.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (activeTab === "active") return matchesSearch && t.isLive;
-    if (activeTab === "completed") return matchesSearch && !t.isLive;
+    if (activeTab === "completed") return matchesSearch && t.bucket === "completed";
     return matchesSearch;
   });
+
+  const handleOpenTransaction = async (transaction: HistoryTransaction) => {
+    if (!transaction.trackingNumber) {
+      return;
+    }
+
+    setIsLoadingDetails(true);
+    try {
+      const result = await fetchCustomerHistoryDetails(transaction.trackingNumber);
+      setSelectedTransaction(result);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFB] text-[#041614] font-sans pb-20 selection:bg-[#39B5A8]/20">
@@ -117,10 +111,18 @@ export function HistoryPage() {
             </span>
           </div>
 
-          {filteredTransactions.map((transaction) => (
+          {isLoadingHistory && (
+            <div className="py-12 text-center text-sm font-bold text-slate-400">
+              Loading your parcel history...
+            </div>
+          )}
+
+          {!isLoadingHistory && filteredTransactions.map((transaction) => (
             <div 
               key={transaction.id}
-              onClick={() => setSelectedTransaction(transaction)}
+              onClick={() => {
+                void handleOpenTransaction(transaction);
+              }}
               className="group relative bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 hover:border-[#39B5A8]/40 hover:shadow-2xl hover:shadow-[#39B5A8]/10 transition-all cursor-pointer overflow-hidden"
             >
               {/* Header Info */}
@@ -143,7 +145,9 @@ export function HistoryPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-bold text-[#1A5D56] mb-1">{transaction.amount}</p>
+                  <p className="text-xl font-bold text-[#1A5D56] mb-1">
+                    {transaction.amount || "Pending"}
+                  </p>
                   <span className={`text-[10px] font-bold uppercase px-3 py-1.5 rounded-xl ${
                     transaction.isLive ? 'bg-[#39B5A8] text-white shadow-lg shadow-[#39B5A8]/20' : 'bg-slate-100 text-slate-500'
                   }`}>
@@ -195,7 +199,7 @@ export function HistoryPage() {
           ))}
 
           {/* Empty State */}
-          {filteredTransactions.length === 0 && (
+          {!isLoadingHistory && filteredTransactions.length === 0 && (
             <div className="py-24 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-100 shadow-inner">
               <div className="relative w-32 h-32 mx-auto mb-8">
                 <div className="absolute inset-0 bg-[#39B5A8]/10 rounded-full animate-ping" />
@@ -215,6 +219,12 @@ export function HistoryPage() {
       </main>
 
       {/* Transaction Details Modal */}
+      {isLoadingDetails && (
+        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center text-white font-bold">
+          Loading parcel details...
+        </div>
+      )}
+
       {selectedTransaction && (
         <TransactionDetailsModal
           transaction={selectedTransaction}

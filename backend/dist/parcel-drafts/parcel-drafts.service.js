@@ -33,6 +33,40 @@ function createTrackingNumber() {
     const serial = Math.floor(100000 + Math.random() * 900000);
     return `PKS-${year}-${serial}`;
 }
+function formatHistoryDate(value) {
+    const date = new Date(value);
+    return new Intl.DateTimeFormat("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    }).format(date);
+}
+function getHistoryStatus(status) {
+    if (status === "submitted") {
+        return {
+            label: "Booking Confirmed",
+            isLive: true,
+            bucket: "active",
+        };
+    }
+    return {
+        label: "Cancelled",
+        isLive: false,
+        bucket: "completed",
+    };
+}
+function getHistoryType(items) {
+    const firstItem = items[0];
+    if (!firstItem)
+        return "Parcel Delivery";
+    if (firstItem.delivery_guarantee) {
+        return `${String(firstItem.delivery_guarantee).charAt(0).toUpperCase()}${String(firstItem.delivery_guarantee).slice(1)} Delivery`;
+    }
+    if (firstItem.item_type) {
+        return String(firstItem.item_type);
+    }
+    return "Parcel Delivery";
+}
 let ParcelDraftsService = class ParcelDraftsService {
     constructor(repository, customerNotificationsService, supabaseService) {
         this.repository = repository;
@@ -91,6 +125,7 @@ let ParcelDraftsService = class ParcelDraftsService {
                 duration: data.duration_text,
                 stepCompleted: data.step_completed,
                 status: data.status,
+                trackingNumber: data.tracking_number,
                 items,
             },
             pagination: {
@@ -276,14 +311,21 @@ let ParcelDraftsService = class ParcelDraftsService {
         if (ownedDraft.error || !ownedDraft.data) {
             throw new common_1.NotFoundException("Parcel draft not found.");
         }
+        const trackingNumber = ownedDraft.data.tracking_number || createTrackingNumber();
         const updateResult = await this.repository.updateOwnedDraftState(draftId, user.userId, {
             step_completed: 5,
             status: "submitted",
+            tracking_number: trackingNumber,
+            sender_name: senderName,
+            sender_phone: senderPhone,
+            receiver_name: receiverName,
+            receiver_phone: receiverPhone,
         });
-        if (updateResult.error) {
+        if (updateResult.error ||
+            !updateResult.data ||
+            updateResult.data.tracking_number !== trackingNumber) {
             throw new common_1.InternalServerErrorException("Unable to complete booking right now.");
         }
-        const trackingNumber = createTrackingNumber();
         await this.customerNotificationsService.createNotification(user.userId, "delivery", "Parcel booking confirmed", `Your parcel for ${receiverName} is booked. Tracking No. ${trackingNumber}.`);
         const admin = this.supabaseService.createAdminClient();
         await admin.from("customer_activity_logs").insert({
@@ -308,6 +350,166 @@ let ParcelDraftsService = class ParcelDraftsService {
                 totalParcels,
                 distance,
                 duration,
+            },
+        };
+    }
+    async getTrackingDetails(user, trackingNumber) {
+        const { data, error } = await this.repository.findOwnedSubmittedDraftByTrackingNumber(user.userId, trackingNumber.trim());
+        if (error || !data) {
+            throw new common_1.NotFoundException("Parcel not found for that tracking number.");
+        }
+        const createdTime = new Date(data.created_at);
+        const updatedTime = new Date(data.updated_at);
+        return {
+            trackingNumber: data.tracking_number,
+            status: data.status === "submitted" ? "Booking Confirmed" : data.status,
+            origin: data.pickup_address,
+            destination: data.delivery_address,
+            estimatedDelivery: data.duration_text || "Calculating...",
+            distance: data.distance_text || "Calculating...",
+            driver: {
+                name: "Assigning driver",
+                phone: "Unavailable",
+                vehicleType: "Pending dispatch",
+                plateNumber: "TBD",
+            },
+            timeline: [
+                {
+                    status: "Booking Confirmed",
+                    location: data.pickup_address,
+                    timestamp: createdTime.toLocaleTimeString("en-PH", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                    }),
+                    completed: true,
+                },
+                {
+                    status: "Preparing for Pickup",
+                    location: data.pickup_address,
+                    timestamp: updatedTime.toLocaleTimeString("en-PH", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                    }),
+                    completed: data.status === "submitted",
+                },
+                {
+                    status: "In Transit",
+                    location: data.delivery_address,
+                    timestamp: "Pending",
+                    completed: false,
+                },
+                {
+                    status: "Delivered",
+                    location: data.delivery_address,
+                    timestamp: "Pending",
+                    completed: false,
+                },
+            ],
+        };
+    }
+    async getHistory(user) {
+        const { data, error } = await this.repository.listOwnedHistory(user.userId);
+        if (error) {
+            throw new common_1.InternalServerErrorException("Unable to load parcel history right now.");
+        }
+        return {
+            transactions: (data ?? []).map((draft) => {
+                const items = draft.parcel_draft_items ?? [];
+                const totalParcels = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+                const historyStatus = getHistoryStatus(draft.status);
+                return {
+                    id: draft.tracking_number || draft.id,
+                    draftId: draft.id,
+                    trackingNumber: draft.tracking_number,
+                    date: formatHistoryDate(draft.created_at),
+                    createdAt: draft.created_at,
+                    from: draft.pickup_address,
+                    to: draft.delivery_address,
+                    status: historyStatus.label,
+                    rawStatus: draft.status,
+                    type: getHistoryType(items),
+                    isLive: historyStatus.isLive,
+                    bucket: historyStatus.bucket,
+                    amount: null,
+                    distance: draft.distance_text,
+                    duration: draft.duration_text,
+                    totalParcels,
+                };
+            }),
+        };
+    }
+    async getHistoryDetails(user, trackingNumber) {
+        const { data, error } = await this.repository.findOwnedHistoryByTrackingNumber(user.userId, trackingNumber.trim());
+        if (error || !data) {
+            throw new common_1.NotFoundException("Parcel history record not found.");
+        }
+        const items = data.parcel_draft_items ?? [];
+        const totalParcels = items.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+        const firstItem = items[0];
+        const historyStatus = getHistoryStatus(data.status);
+        return {
+            transaction: {
+                id: data.tracking_number || data.id,
+                trackingNumber: data.tracking_number,
+                date: formatHistoryDate(data.created_at),
+                createdAt: data.created_at,
+                from: data.pickup_address,
+                to: data.delivery_address,
+                status: historyStatus.label,
+                rawStatus: data.status,
+                type: getHistoryType(items),
+                isLive: historyStatus.isLive,
+                amount: null,
+                distance: data.distance_text,
+                duration: data.duration_text,
+                totalParcels,
+            },
+            details: {
+                sender: {
+                    name: data.sender_name || "Not available",
+                    phone: data.sender_phone || "Not available",
+                    address: data.pickup_address,
+                },
+                receiver: {
+                    name: data.receiver_name || "Not available",
+                    phone: data.receiver_phone || "Not available",
+                    address: data.delivery_address,
+                },
+                parcel: {
+                    weight: firstItem?.weight_text || "Not available",
+                    dimensions: "Not stored yet",
+                    description: items.length > 0
+                        ? items
+                            .map((item) => `${item.item_type || "Parcel"} x${item.quantity ?? 1}`)
+                            .join(", ")
+                        : "No parcel items found",
+                    specialInstructions: firstItem?.delivery_guarantee
+                        ? `${firstItem.delivery_guarantee} handling`
+                        : "Standard handling",
+                    totalParcels,
+                },
+                driver: historyStatus.isLive
+                    ? {
+                        name: "Assigning driver",
+                        phone: "Unavailable",
+                        vehicle: "Pending dispatch",
+                        rating: null,
+                    }
+                    : null,
+                timeline: [
+                    {
+                        status: "Booking Created",
+                        time: formatHistoryDate(data.created_at),
+                        location: data.pickup_address,
+                        completed: true,
+                    },
+                    {
+                        status: historyStatus.label,
+                        time: formatHistoryDate(data.updated_at),
+                        location: data.delivery_address,
+                        completed: true,
+                    },
+                ],
             },
         };
     }
