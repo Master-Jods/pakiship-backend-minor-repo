@@ -1,7 +1,24 @@
 import { useState, useEffect } from "react";
-import { Star, MessageSquare, ShieldCheck, Zap, Package, UserCheck, Clock, AlertCircle, CheckCircle2, X } from "lucide-react";
+import {
+  Star,
+  MessageSquare,
+  ShieldCheck,
+  Zap,
+  Package,
+  UserCheck,
+  Clock,
+  AlertCircle,
+  CheckCircle2,
+  X,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 import { CustomerPageHeader } from "../components/CustomerPageHeader";
+import {
+  fetchCustomerReviews,
+  submitCustomerReview,
+  type CustomerReview,
+} from "@/lib/customer-dashboard";
+
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
 
 const MASCOTS = {
@@ -12,6 +29,16 @@ const MASCOTS = {
   5: { src: "https://i.imgur.com/jknPCsk.png", label: "Excellent" },
 };
 
+function formatShortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recent";
+
+  return new Intl.DateTimeFormat("en-PH", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 export function RateReviewPage() {
   const navigate = useNavigate();
   const [trackingNumber, setTrackingNumber] = useState("");
@@ -19,6 +46,8 @@ export function RateReviewPage() {
   const [hoveredRating, setHoveredRating] = useState(0);
   const [review, setReview] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recentReviews, setRecentReviews] = useState<CustomerReview[]>([]);
 
   const [toast, setToast] = useState<{ show: boolean; message: string; type: "error" | "success" }>({
     show: false,
@@ -45,28 +74,61 @@ export function RateReviewPage() {
     }
   }, [toast.show]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadRecent = async () => {
+      try {
+        const result = await fetchCustomerReviews(5);
+        if (isMounted) setRecentReviews(result.reviews);
+      } catch {
+        if (isMounted) setRecentReviews([]);
+      }
+    };
+
+    void loadRecent();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const toggleTag = (label: string) => {
-    setSelectedTags(prev =>
-      prev.includes(label) ? prev.filter(t => t !== label) : [...prev, label]
-    );
+    setSelectedTags((prev) => (prev.includes(label) ? prev.filter((t) => t !== label) : [...prev, label]));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (rating === 0) {
       showToast("Please select a star rating to continue.", "error");
       return;
     }
-    console.log({ trackingNumber, rating, review, selectedTags });
-    showToast("Feedback submitted! Redirecting to home...", "success");
-    setTimeout(() => {
-      navigate("/customer/home");
-    }, 2000);
+
+    setIsSubmitting(true);
+    try {
+      await submitCustomerReview({
+        trackingNumber,
+        rating,
+        review,
+        tags: selectedTags,
+      });
+
+      showToast("Feedback submitted! Redirecting to home...", "success");
+      const updated = await fetchCustomerReviews(5);
+      setRecentReviews(updated.reviews);
+
+      setTimeout(() => {
+        navigate("/customer/home");
+      }, 2000);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to submit feedback.", "error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#F0F9F8] selection:bg-[#39B5A8]/20 font-sans">
-
       <style>{`
         @keyframes mascotPop {
           0%   { transform: scale(0.4) translateY(10px); opacity: 0; }
@@ -74,26 +136,26 @@ export function RateReviewPage() {
         }
       `}</style>
 
-      {/* Toast */}
       <div
         className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] transition-all duration-500 transform ${
           toast.show ? "translate-y-0 opacity-100" : "-translate-y-12 opacity-0 pointer-events-none"
         }`}
       >
-        <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border-2 min-w-[320px] ${
-          toast.type === "error"
-            ? "bg-white border-red-100 text-red-600 shadow-red-200/50"
-            : "bg-white border-[#39B5A8]/20 text-[#1A5D56] shadow-[#39B5A8]/20"
-        }`}>
+        <div
+          className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border-2 min-w-[320px] ${
+            toast.type === "error"
+              ? "bg-white border-red-100 text-red-600 shadow-red-200/50"
+              : "bg-white border-[#39B5A8]/20 text-[#1A5D56] shadow-[#39B5A8]/20"
+          }`}
+        >
           {toast.type === "error" ? <AlertCircle className="w-6 h-6" /> : <CheckCircle2 className="w-6 h-6 text-[#39B5A8]" />}
           <p className="font-bold text-sm tracking-tight">{toast.message}</p>
-          <button onClick={() => setToast(p => ({ ...p, show: false }))} className="ml-auto p-1 hover:bg-slate-100 rounded-lg">
+          <button onClick={() => setToast((p) => ({ ...p, show: false }))} className="ml-auto p-1 hover:bg-slate-100 rounded-lg">
             <X className="w-4 h-4 text-slate-400" />
           </button>
         </div>
       </div>
 
-      {/* Header */}
       <CustomerPageHeader
         title="Rate & Review"
         subtitle="Help us improve the PakiShip experience"
@@ -103,8 +165,6 @@ export function RateReviewPage() {
 
       <main className="max-w-6xl mx-auto px-6 py-6 lg:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-          {/* Left Column: Form */}
           <div className="lg:col-span-7 bg-white rounded-[2rem] shadow-lg shadow-[#1A5D56]/5 border border-[#39B5A8]/20 p-6 lg:p-8">
             <div className="mb-6 border-l-4 border-[#39B5A8] pl-5">
               <h2 className="text-2xl font-bold text-[#1A5D56]">How was your delivery?</h2>
@@ -125,13 +185,12 @@ export function RateReviewPage() {
                   />
                 </div>
 
-                {/* Star Rating Box with Inline Mascot */}
                 <div className="bg-[#F0F9F8] rounded-xl p-3 border border-[#39B5A8]/10 flex flex-col items-center justify-center shadow-inner">
-
-                  {/* Inline Mascot */}
-                  <div className={`transition-all duration-300 overflow-hidden flex items-center justify-center ${
-                    rating > 0 ? "h-20 opacity-100 mb-2" : "h-0 opacity-0 mb-0"
-                  }`}>
+                  <div
+                    className={`transition-all duration-300 overflow-hidden flex items-center justify-center ${
+                      rating > 0 ? "h-20 opacity-100 mb-2" : "h-0 opacity-0 mb-0"
+                    }`}
+                  >
                     {rating > 0 && (
                       <img
                         key={rating}
@@ -139,13 +198,12 @@ export function RateReviewPage() {
                         alt={MASCOTS[rating as keyof typeof MASCOTS].label}
                         className="h-full w-auto object-contain drop-shadow-md"
                         style={{
-                          animation: "mascotPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards"
+                          animation: "mascotPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
                         }}
                       />
                     )}
                   </div>
 
-                  {/* Stars */}
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
@@ -156,7 +214,13 @@ export function RateReviewPage() {
                         onMouseLeave={() => setHoveredRating(0)}
                         className="transition-transform hover:scale-125 active:scale-90"
                       >
-                        <Star className={`w-6 h-6 ${star <= (hoveredRating || rating) ? "fill-[#39B5A8] text-[#39B5A8] drop-shadow-sm" : "text-slate-300 fill-slate-50"}`} />
+                        <Star
+                          className={`w-6 h-6 ${
+                            star <= (hoveredRating || rating)
+                              ? "fill-[#39B5A8] text-[#39B5A8] drop-shadow-sm"
+                              : "text-slate-300 fill-slate-50"
+                          }`}
+                        />
                       </button>
                     ))}
                   </div>
@@ -212,15 +276,15 @@ export function RateReviewPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-[2] h-12 rounded-xl bg-[#39B5A8] hover:bg-[#1A5D56] text-white font-bold transition-all shadow-lg shadow-[#39B5A8]/20 text-sm active:scale-95"
+                  disabled={isSubmitting}
+                  className="flex-[2] h-12 rounded-xl bg-[#39B5A8] hover:bg-[#1A5D56] text-white font-bold transition-all shadow-lg shadow-[#39B5A8]/20 text-sm active:scale-95 disabled:opacity-50"
                 >
-                  Submit Review
+                  {isSubmitting ? "Submitting..." : "Submit Review"}
                 </button>
               </div>
             </form>
           </div>
 
-          {/* Right Column */}
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-[#1A5D56] rounded-[2rem] p-6 text-white shadow-lg relative overflow-hidden">
               <div className="absolute -top-10 -right-10 w-32 h-32 bg-[#39B5A8]/10 rounded-full" />
@@ -230,29 +294,39 @@ export function RateReviewPage() {
                   <ShieldCheck className="w-5 h-5 text-[#39B5A8]" />
                   Recent Feedback
                 </h3>
-                <span className="text-[10px] bg-white/10 px-2 py-1 rounded-md font-bold text-[#39B5A8] border border-white/10">12 Total</span>
+                <span className="text-[10px] bg-white/10 px-2 py-1 rounded-md font-bold text-[#39B5A8] border border-white/10">
+                  {recentReviews.length} Total
+                </span>
               </div>
 
               <div className="space-y-4 relative z-10">
-                {[
-                  { id: "PKS-002", text: "Excellent service! The driver was very professional and the package arrived in perfect condition.", tag: "SECURED" },
-                  { id: "PKS-003", text: "Good service overall. Delivery was on time and the rider was very polite.", tag: "FAST" }
-                ].map((item, idx) => (
-                  <div key={idx} className="bg-white/5 rounded-2xl p-4 border border-white/10 hover:bg-white/[0.08] transition-all group">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-bold text-[#39B5A8] tracking-widest uppercase">{item.id}</span>
-                      <div className="flex gap-0.5">
-                        {[...Array(5)].map((_, i) => <Star key={i} className="w-3 h-3 fill-[#39B5A8] text-[#39B5A8]" />)}
-                      </div>
-                    </div>
-                    <p className="text-[13px] text-white/80 font-medium italic mb-3 leading-relaxed">
-                      "{item.text}"
-                    </p>
-                    <span className="text-[9px] font-extrabold bg-[#39B5A8]/20 text-[#39B5A8] px-2.5 py-1 rounded-lg border border-[#39B5A8]/20 uppercase tracking-wider">
-                      {item.tag}
-                    </span>
+                {recentReviews.length === 0 ? (
+                  <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
+                    <p className="text-sm text-white/80 font-medium">No reviews yet. Your next feedback will appear here.</p>
                   </div>
-                ))}
+                ) : (
+                  recentReviews.map((item) => (
+                    <div key={item.id} className="bg-white/5 rounded-2xl p-4 border border-white/10 hover:bg-white/[0.08] transition-all group">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-[#39B5A8] tracking-widest uppercase">{item.trackingNumber}</span>
+                        <div className="flex gap-0.5">
+                          {[...Array(5)].map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`w-3 h-3 ${i < item.rating ? "fill-[#39B5A8] text-[#39B5A8]" : "text-white/30"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-[13px] text-white/80 font-medium italic mb-2 leading-relaxed">
+                        "{item.review || "No comment provided."}"
+                      </p>
+                      <span className="text-[9px] font-extrabold bg-[#39B5A8]/20 text-[#39B5A8] px-2.5 py-1 rounded-lg border border-[#39B5A8]/20 uppercase tracking-wider">
+                        {formatShortDate(item.createdAt)}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -262,13 +336,10 @@ export function RateReviewPage() {
               </div>
               <div>
                 <h4 className="font-bold text-[#1A5D56] text-xs uppercase tracking-widest mb-1">Impact</h4>
-                <p className="text-sm text-slate-500 font-bold leading-tight">
-                  Your feedback helps us reward top-tier riders.
-                </p>
+                <p className="text-sm text-slate-500 font-bold leading-tight">Your feedback helps us reward top-tier riders.</p>
               </div>
             </div>
           </div>
-
         </div>
       </main>
     </div>

@@ -151,9 +151,16 @@ export function SignUpPage() {
         }),
       });
 
-      const result = await response.json();
+      const raw = await response.text();
+      let result: any = null;
+      try {
+        result = raw ? JSON.parse(raw) : {};
+      } catch {
+        result = {};
+      }
+
       if (!response.ok) {
-        setSubmitError(result.message || "Unable to create account.");
+        setSubmitError(result.message || raw || "Unable to create account.");
         return;
       }
 
@@ -161,8 +168,9 @@ export function SignUpPage() {
       localStorage.setItem("userName", result.user.fullName);
       localStorage.setItem("userRole", result.user.role);
       navigate(result.redirectPath);
-    } catch {
-      setSubmitError("Something went wrong while creating your account.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to reach the signup server.";
+      setSubmitError(message);
     } finally {
       setSubmitting(false);
     }

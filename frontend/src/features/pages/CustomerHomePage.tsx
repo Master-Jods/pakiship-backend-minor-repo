@@ -36,6 +36,11 @@ import {
   markAllCustomerNotificationsAsRead,
   markCustomerNotificationAsRead,
 } from "@/lib/customer-notifications";
+import {
+  fetchCustomerActiveDeliveries,
+  fetchCustomerAnnouncements,
+  type ActiveDelivery,
+} from "@/lib/customer-dashboard";
 
 // Assets
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
@@ -53,7 +58,7 @@ const mascotThinkingImg = "https://i.imgur.com/gDo17NY.png";
 // Types for Announcements
 type Announcement = {
   id: string;
-  type: "system" | "update";
+  type: "system" | "update" | "promo";
   title: string;
   message: string;
   isPinned: boolean;
@@ -74,22 +79,8 @@ export function CustomerHomePage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   // Announcements State
-  const [announcements, setAnnouncements] = useState<Announcement[]>([
-    {
-      id: "maint-001",
-      type: "system",
-      title: "Scheduled Maintenance",
-      message: "System will be offline on March 15, 2:00 AM - 4:00 AM PHT.",
-      isPinned: true,
-    },
-    {
-      id: "lipa-hub-2024",
-      type: "update",
-      title: "New Partner Hubs in Lipa!",
-      message: "We've expanded! You can now drop off parcels at 5 new locations in Lipa City.",
-      isPinned: false,
-    },
-  ]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [activeDeliveries, setActiveDeliveries] = useState<ActiveDelivery[]>([]);
   const [customerStats, setCustomerStats] = useState([
     { label: "Total Bookings", value: "0" },
     { label: "Active Bookings", value: "0" },
@@ -176,8 +167,8 @@ export function CustomerHomePage() {
     const hasShownTutorial = localStorage.getItem(getTutorialStorageKey("customer"));
     if (!hasShownTutorial) setShowTutorial(true);
 
-    setAnnouncements((prev) => 
-      prev.filter((a) => !localStorage.getItem(`dismissed_${a.id}`))
+    setAnnouncements((prev) =>
+      prev.filter((a) => !localStorage.getItem(`dismissed_${a.id}`)),
     );
   }, []);
 
@@ -217,9 +208,16 @@ export function CustomerHomePage() {
   useEffect(() => {
     const loadCustomerProfile = async () => {
       try {
-        const [profileResult, notificationsResult] = await Promise.all([
+        const [
+          profileResult,
+          notificationsResult,
+          announcementsResult,
+          activeDeliveriesResult,
+        ] = await Promise.all([
           fetchCustomerProfile(),
           fetchCustomerNotifications(),
+          fetchCustomerAnnouncements(),
+          fetchCustomerActiveDeliveries(),
         ]);
         setUserName(profileResult.profile.fullName);
         setProfileImage(profileResult.profile.profilePicture);
@@ -230,6 +228,12 @@ export function CustomerHomePage() {
           { label: "Account Created", value: profileResult.stats.accountCreated },
         ]);
         setNotifications(notificationsResult.notifications);
+        setAnnouncements(
+          announcementsResult.announcements.filter(
+            (item) => !localStorage.getItem(`dismissed_${item.id}`),
+          ),
+        );
+        setActiveDeliveries(activeDeliveriesResult.deliveries);
         syncCustomerProfileToStorage(profileResult.profile);
       } catch {
         // Keep local fallback values if the backend is unavailable.
@@ -443,22 +447,22 @@ export function CustomerHomePage() {
         </div>
 
         <div className="space-y-4">
-          <DeliveryItem
-            id="PKS-2024-001"
-            location="Makati City"
-            time="15 mins away"
-            status="In Transit"
-            statusClass="text-[#54A0CC] bg-[#54A0CC]/10"
-            onTrack={() => handleTrackParcel("PKS-2024-001")}
-          />
-          <DeliveryItem
-            id="PKS-2024-002"
-            location="Quezon City"
-            time="30 mins away"
-            status="Out for Delivery"
-            statusClass="text-[#FDB833] bg-[#FDB833]/10"
-            onTrack={() => handleTrackParcel("PKS-2024-002")}
-          />
+          {activeDeliveries.slice(0, 2).map((delivery) => (
+            <DeliveryItem
+              key={delivery.id}
+              id={delivery.trackingNumber}
+              location={delivery.to}
+              time={delivery.timeLabel}
+              status={delivery.status}
+              statusClass="text-[#54A0CC] bg-[#54A0CC]/10"
+              onTrack={() => handleTrackParcel(delivery.trackingNumber)}
+            />
+          ))}
+          {activeDeliveries.length === 0 && (
+            <div className="bg-white border border-[#39B5A8]/10 rounded-[1.5rem] p-8 text-center text-sm font-bold text-gray-400">
+              No active deliveries yet.
+            </div>
+          )}
         </div>
       </main>
 

@@ -13,6 +13,7 @@ const auth_module_1 = require("./auth/auth.module");
 const customer_profile_module_1 = require("./customer-profile/customer-profile.module");
 const parcel_drafts_module_1 = require("./parcel-drafts/parcel-drafts.module");
 const supabase_module_1 = require("./supabase/supabase.module");
+const customer_dashboard_module_1 = require("./customer-dashboard/customer-dashboard.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -24,6 +25,7 @@ exports.AppModule = AppModule = __decorate([
             customer_notifications_module_1.CustomerNotificationsModule,
             customer_profile_module_1.CustomerProfileModule,
             parcel_drafts_module_1.ParcelDraftsModule,
+            customer_dashboard_module_1.CustomerDashboardModule,
         ],
     })
 ], AppModule);

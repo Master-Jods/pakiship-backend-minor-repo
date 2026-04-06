@@ -29,4 +29,25 @@ Set this in [`frontend/.env.local`](/Users/jods/Downloads/pakiship-backend-minor
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 ```
+
+## Supabase Schema (Customer Dashboard APIs)
+
+Run this SQL in your Supabase SQL editor:
+
+`backend/supabase/customer_dashboard_schema.sql`
+
+This creates:
+- `customer_reviews`
+- `customer_announcements`
+
+## New Customer API Endpoints
+
+All routes are under `/api` (example base URL: `http://localhost:4000/api`):
+
+- `GET /customer/dashboard/active-deliveries`
+- `GET /customer/dashboard/announcements`
+- `GET /customer/reviews?limit=5`
+- `POST /customer/reviews`
+- `GET /customer/settings/preferences`
+- `PATCH /customer/settings/preferences`
   

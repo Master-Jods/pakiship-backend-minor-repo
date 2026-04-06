@@ -6,6 +6,7 @@
     "concurrently": "^9.1.2"
   },
   "scripts": {
+    "dev": "npm run dev:all",
     "frontend:build": "npm --prefix frontend run build",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:start": "npm --prefix frontend run start",

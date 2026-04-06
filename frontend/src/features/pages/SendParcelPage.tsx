@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   ArrowLeft,
   Package,
@@ -412,6 +412,14 @@ export function SendParcelPage() {
     "Select Service",
     "Contact Info",
   ];
+  const orderPreviewId = useMemo(() => {
+    if (!draftId) return "0000";
+
+    const numeric = draftId.replace(/\D/g, "");
+    if (!numeric) return "0000";
+
+    return numeric.slice(-4).padStart(4, "0");
+  }, [draftId]);
 
   // Reusable Tailwind classes
   const inputClasses =
@@ -810,10 +818,7 @@ export function SendParcelPage() {
                           Order Summary
                         </h3>
                         <span className="text-[10px] font-bold text-slate-400">
-                          ID: #PAK-
-                          {Math.floor(
-                            1000 + Math.random() * 9000,
-                          )}
+                          ID: #PAK-{orderPreviewId}
                         </span>
                       </div>
 
