@@ -3,8 +3,30 @@ import { ParcelDraftsService } from "./parcel-drafts.service";
 export declare class ParcelDraftsController {
     private readonly parcelDraftsService;
     constructor(parcelDraftsService: ParcelDraftsService);
+    estimateRoute(request: Request, body: Record<string, unknown>): Promise<{
+        distanceKm: number;
+        durationMinutes: number;
+        distanceText: string;
+        durationText: string;
+        pickupAddress: string;
+        deliveryAddress: string;
+    }>;
+    getAvailableHubs(request: Request): Promise<{
+        hubs: {
+            id: string;
+            name: string;
+            address: string;
+            distance: string;
+            status: string;
+            capacity: string;
+        }[];
+    }>;
     saveStepOne(request: Request, body: Record<string, unknown>): Promise<{
         draftId: any;
+        distance: string;
+        duration: string;
+        distanceKm: number;
+        durationMinutes: number;
     }>;
     getTrackingDetails(request: Request, trackingNumber: string): Promise<{
         trackingNumber: any;

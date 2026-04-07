@@ -13,18 +13,13 @@ import {
   Building2,
   Lock,
 } from "lucide-react";
+import {
+  fetchSavedRecipients,
+  quickSaveRecipient,
+  type SavedRecipient,
+} from "@/lib/customer-profile";
 const gcashLogo = "/assets/6557a9da1a0207c1bccde05ffcf445d04ba3d099.png";
 const mayaLogo = "/assets/255b60762629fecd2f88e79db44bd4b5835e1c02.png";
-
-interface Contact {
-  id: number;
-  name: string;
-  phone: string;
-  address: string;
-  initial: string;
-  frequency: number;
-  lastUsed: number;
-}
 
 interface PaymentMethodSelectorProps {
   selectedMethod: string;
@@ -49,22 +44,45 @@ export default function PaymentMethodSelector({
   const [isSaving, setIsSaving] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // LOGIC DEFINITIONS
   const isCashAllowed = selectedServiceId !== "pakishare" && selectedServiceId !== "pakibusiness";
   const isDigitalAllowed = true; 
 
-  const [contacts, setContacts] = useState<Contact[]>([
-    { id: 1, name: "Alyssa", phone: "09171234567", address: "Quezon City", initial: "A", frequency: 5, lastUsed: Date.now() - 864000000 },
-    { id: 2, name: "Mario", phone: "09187654321", address: "Makati BGC", initial: "M", frequency: 2, lastUsed: Date.now() - 518400000 },
-    { id: 3, name: "Kuya Jojo", phone: "09192223333", address: "Bulacan Hub", initial: "K", frequency: 1, lastUsed: Date.now() - 172800000 },
-  ]);
+  const [contacts, setContacts] = useState<SavedRecipient[]>([]);
 
   const normalizedReceiverPhone = useMemo(() => normalizePhone(receiverPhone), [receiverPhone]);
   const matchedContact = useMemo(() => contacts.find((c) => normalizePhone(c.phone) === normalizedReceiverPhone) || null, [contacts, normalizedReceiverPhone]);
   const isAlreadySaved = !!matchedContact;
 
-  useEffect(() => { setHasSaved(false); }, [receiverName, normalizedReceiverPhone]);
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSavedRecipients = async () => {
+      try {
+        const result = await fetchSavedRecipients();
+        if (isMounted) {
+          setContacts(result.recipients);
+        }
+      } catch {
+        if (isMounted) {
+          setContacts([]);
+        }
+      }
+    };
+
+    void loadSavedRecipients();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setHasSaved(false);
+    setSaveError(null);
+  }, [receiverName, normalizedReceiverPhone]);
 
   // AUTO-CORRECTION LOGIC
   useEffect(() => {
@@ -74,7 +92,7 @@ export default function PaymentMethodSelector({
     }
   }, [selectedServiceId, selectedMethod, onSelect, isCashAllowed]);
 
-  const handleContactSelect = (contact: Contact) => {
+  const handleContactSelect = (contact: SavedRecipient) => {
     // This strictly updates the input fields/state and does not trigger modal navigation
     onReceiverChange({ 
       name: contact.name, 
@@ -83,7 +101,7 @@ export default function PaymentMethodSelector({
     
     setContacts((prev) => 
       prev.map(c => c.id === contact.id 
-        ? { ...c, frequency: c.frequency + 1, lastUsed: Date.now() } 
+        ? { ...c, frequency: c.frequency + 1, lastUsed: new Date().toISOString() } 
         : c
       )
     );
@@ -95,25 +113,33 @@ export default function PaymentMethodSelector({
     { id: "metrobank", name: "Metrobank" },
   ];
 
-  const handleSaveContact = (e: React.MouseEvent) => {
+  const handleSaveContact = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (isSaving || hasSaved || isAlreadySaved || !receiverName.trim() || !isLikelyPHMobile(normalizedReceiverPhone)) return;
     setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
-      setHasSaved(true);
-      const newContact: Contact = {
-        id: Date.now(),
+    setSaveError(null);
+
+    try {
+      const result = await quickSaveRecipient({
         name: receiverName.trim(),
         phone: normalizedReceiverPhone,
-        address: "Saved Contact",
-        initial: receiverName.trim().charAt(0).toUpperCase() || "N",
-        frequency: 1,
-        lastUsed: Date.now(),
-      };
-      setContacts(prev => [newContact, ...prev]);
+      });
+
+      setContacts((prev) => {
+        const withoutDuplicate = prev.filter(
+          (contact) => normalizePhone(contact.phone) !== normalizePhone(result.recipient.phone),
+        );
+        return [result.recipient, ...withoutDuplicate];
+      });
+      setIsSaving(false);
+      setHasSaved(true);
       setTimeout(() => setHasSaved(false), 2500);
-    }, 900);
+    } catch (error) {
+      setIsSaving(false);
+      setSaveError(
+        error instanceof Error ? error.message : "Unable to save this recipient.",
+      );
+    }
   };
 
   return (
@@ -126,7 +152,7 @@ export default function PaymentMethodSelector({
           <div className="h-px flex-1 bg-slate-100" />
         </div>
         <div className="flex gap-3 overflow-x-auto py-2 px-1 scrollbar-hide">
-          {contacts.sort((a, b) => b.frequency - a.frequency).map((contact) => (
+          {[...contacts].sort((a, b) => b.frequency - a.frequency).map((contact) => (
             <button
               key={contact.id}
               type="button"
@@ -147,14 +173,17 @@ export default function PaymentMethodSelector({
         </div>
         
         {receiverName && (
-          <div className="bg-slate-50/80 border border-slate-100 rounded-[2rem] p-5 flex items-center justify-between">
+          <div className="bg-slate-50/80 border border-slate-100 rounded-[2rem] p-5 flex items-center justify-between gap-4 flex-col sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${hasSaved || isAlreadySaved ? "bg-[#39B5A8] text-white" : "bg-white text-slate-400 shadow-sm"}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${hasSaved || isAlreadySaved ? "bg-[#39B5A8] text-white" : "bg-white text-slate-400 shadow-sm"}`}>
                 {hasSaved || isAlreadySaved ? <CheckCircle className="w-5 h-5" /> : <Save className="w-5 h-5" />}
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-800">{isAlreadySaved ? "Contact Verified" : "Save recipient?"}</h4>
                 <p className="text-[10px] text-slate-500">Quickly use this contact for future shipments.</p>
+                {saveError && (
+                  <p className="mt-1 text-[10px] font-semibold text-red-500">{saveError}</p>
+                )}
               </div>
             </div>
             {!isAlreadySaved && (
@@ -162,7 +191,7 @@ export default function PaymentMethodSelector({
                 type="button"
                 onClick={handleSaveContact} 
                 disabled={isSaving || !isLikelyPHMobile(normalizedReceiverPhone)} 
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : hasSaved ? "Saved!" : "Quick Save"}
               </button>

@@ -38,6 +38,20 @@ type UpdateCustomerProfileInput = {
   preferences?: Partial<CustomerPreferences>;
 };
 
+type QuickSaveRecipientInput = {
+  name: string;
+  phone: string;
+};
+
+type SavedRecipientRow = {
+  id: string;
+  name: string;
+  phone: string;
+  frequency: number | null;
+  last_used_at: string | null;
+  created_at: string | null;
+};
+
 const PROFILE_IMAGE_BUCKET = process.env.SUPABASE_PROFILE_BUCKET || "customer-profile-images";
 const DISCOUNT_ID_BUCKET = process.env.SUPABASE_DISCOUNT_BUCKET || "customer-discount-ids";
 const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
@@ -50,6 +64,44 @@ function normalizeEmail(email: string) {
 
 function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "").slice(-10);
+}
+
+function normalizeRecipientPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+
+  if (digits.length === 11 && digits.startsWith("09")) {
+    return digits.slice(1);
+  }
+
+  if (digits.length === 10 && digits.startsWith("9")) {
+    return digits;
+  }
+
+  return "";
+}
+
+function formatRecipientPhone(phone: string) {
+  const normalized = normalizeRecipientPhone(phone);
+  return normalized ? `0${normalized}` : phone;
+}
+
+function buildRecipientInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || "N";
+}
+
+function mapSavedRecipient(row: SavedRecipientRow) {
+  const name = row.name?.trim() || "Unnamed Recipient";
+
+  return {
+    id: row.id,
+    name,
+    phone: formatRecipientPhone(row.phone),
+    address: "Saved Contact",
+    initial: buildRecipientInitial(name),
+    frequency: Math.max(1, row.frequency ?? 1),
+    lastUsed: row.last_used_at ?? row.created_at ?? new Date().toISOString(),
+    createdAt: row.created_at,
+  };
 }
 
 function readPreferences(raw: unknown): CustomerPreferences {
@@ -130,6 +182,26 @@ export class CustomerProfileService {
     private readonly supabaseService: SupabaseService,
     private readonly customerNotificationsService: CustomerNotificationsService,
   ) {}
+
+  private async ensureStorageBucket(bucketName: string, isPublic = true) {
+    const admin = this.supabaseService.createAdminClient();
+    const bucketResult = await admin.storage.getBucket(bucketName);
+
+    if (!bucketResult.error && bucketResult.data) {
+      return;
+    }
+
+    const createResult = await admin.storage.createBucket(bucketName, {
+      public: isPublic,
+      fileSizeLimit: isPublic ? `${MAX_DISCOUNT_ID_SIZE_BYTES}` : undefined,
+    });
+
+    if (createResult.error && !/already exists/i.test(createResult.error.message || "")) {
+      throw new InternalServerErrorException(
+        `Unable to prepare storage bucket "${bucketName}": ${createResult.error.message || "unknown error"}`,
+      );
+    }
+  }
 
   async getCustomerProfile(session: SessionPayload) {
     if (session.role !== "customer") {
@@ -305,6 +377,105 @@ export class CustomerProfileService {
     });
   }
 
+  async getSavedRecipients(session: SessionPayload) {
+    if (session.role !== "customer") {
+      throw new ForbiddenException("Only customers can access saved recipients.");
+    }
+
+    const admin = this.supabaseService.createAdminClient();
+    const { data, error } = await admin
+      .from("customer_saved_recipients")
+      .select("id, name, phone, frequency, last_used_at, created_at")
+      .eq("user_id", session.userId)
+      .order("frequency", { ascending: false })
+      .order("last_used_at", { ascending: false })
+      .limit(12);
+
+    if (error) {
+      throw new InternalServerErrorException("Unable to load saved recipients.");
+    }
+
+    return {
+      recipients: (data ?? []).map((row) => mapSavedRecipient(row as SavedRecipientRow)),
+    };
+  }
+
+  async quickSaveRecipient(session: SessionPayload, input: QuickSaveRecipientInput) {
+    if (session.role !== "customer") {
+      throw new ForbiddenException("Only customers can save recipients.");
+    }
+
+    const name = input.name.trim();
+    const phone = normalizeRecipientPhone(input.phone);
+
+    if (!name) {
+      throw new BadRequestException("Recipient name is required.");
+    }
+
+    if (!phone) {
+      throw new BadRequestException("Please enter a valid Philippine mobile number.");
+    }
+
+    const admin = this.supabaseService.createAdminClient();
+    const { data: existingRecipient, error: existingError } = await admin
+      .from("customer_saved_recipients")
+      .select("id, name, phone, frequency, last_used_at, created_at")
+      .eq("user_id", session.userId)
+      .eq("phone", phone)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new InternalServerErrorException("Unable to verify saved recipients.");
+    }
+
+    const now = new Date().toISOString();
+
+    if (existingRecipient) {
+      const nextFrequency = Math.max(1, existingRecipient.frequency ?? 1);
+      const { data: updatedRecipient, error: updateError } = await admin
+        .from("customer_saved_recipients")
+        .update({
+          name,
+          frequency: nextFrequency,
+          last_used_at: now,
+          updated_at: now,
+        })
+        .eq("id", existingRecipient.id)
+        .select("id, name, phone, frequency, last_used_at, created_at")
+        .single();
+
+      if (updateError || !updatedRecipient) {
+        throw new InternalServerErrorException("Unable to save this recipient right now.");
+      }
+
+      return {
+        recipient: mapSavedRecipient(updatedRecipient as SavedRecipientRow),
+        alreadySaved: true,
+      };
+    }
+
+    const { data: insertedRecipient, error: insertError } = await admin
+      .from("customer_saved_recipients")
+      .insert({
+        user_id: session.userId,
+        name,
+        phone,
+        frequency: 1,
+        last_used_at: now,
+      })
+      .select("id, name, phone, frequency, last_used_at, created_at")
+      .single();
+
+    if (insertError || !insertedRecipient) {
+      throw new InternalServerErrorException("Unable to save this recipient right now.");
+    }
+
+    return {
+      recipient: mapSavedRecipient(insertedRecipient as SavedRecipientRow),
+      alreadySaved: false,
+    };
+  }
+
   async uploadProfilePicture(session: SessionPayload, file: UploadedFile | undefined) {
     if (session.role !== "customer") {
       throw new ForbiddenException("Only customers can update this profile.");
@@ -316,6 +487,8 @@ export class CustomerProfileService {
       emptyMessage: "Please choose an image to upload.",
     });
 
+    await this.ensureStorageBucket(PROFILE_IMAGE_BUCKET, true);
+
     const admin = this.supabaseService.createAdminClient();
     const extension = getFileExtension(file.originalname);
     const objectPath = `${session.userId}/avatar-${randomUUID()}.${extension}`;
@@ -325,7 +498,9 @@ export class CustomerProfileService {
     });
 
     if (uploadResult.error) {
-      throw new InternalServerErrorException("Unable to upload your profile image.");
+      throw new InternalServerErrorException(
+        `Unable to upload your profile image: ${uploadResult.error.message || "storage upload failed"}.`,
+      );
     }
 
     const { data: publicUrlData } = admin.storage
@@ -339,7 +514,9 @@ export class CustomerProfileService {
       .eq("id", session.userId);
 
     if (error) {
-      throw new InternalServerErrorException("Profile picture uploaded but could not be saved.");
+      throw new InternalServerErrorException(
+        `Profile picture uploaded but could not be saved: ${error.message || "profile update failed"}.`,
+      );
     }
 
     await this.logCustomerEvent(
@@ -366,6 +543,8 @@ export class CustomerProfileService {
       emptyMessage: "Please choose a discount ID to upload.",
     });
 
+    await this.ensureStorageBucket(DISCOUNT_ID_BUCKET, true);
+
     const admin = this.supabaseService.createAdminClient();
     const extension = getFileExtension(file.originalname);
     const objectPath = `${session.userId}/discount-id-${randomUUID()}.${extension}`;
@@ -375,7 +554,9 @@ export class CustomerProfileService {
     });
 
     if (uploadResult.error) {
-      throw new InternalServerErrorException("Unable to upload your discount ID.");
+      throw new InternalServerErrorException(
+        `Unable to upload your discount ID: ${uploadResult.error.message || "storage upload failed"}.`,
+      );
     }
 
     const { data: publicUrlData } = admin.storage
@@ -397,7 +578,9 @@ export class CustomerProfileService {
       .eq("id", session.userId);
 
     if (error) {
-      throw new InternalServerErrorException("Discount ID uploaded but could not be saved.");
+      throw new InternalServerErrorException(
+        `Discount ID uploaded but could not be saved: ${error.message || "profile update failed"}.`,
+      );
     }
 
     await this.logCustomerEvent(
@@ -436,6 +619,10 @@ export class CustomerProfileService {
       );
     }
 
+    if (currentPassword === newPassword) {
+      throw new BadRequestException("New password must be different from your current password.");
+    }
+
     const admin = this.supabaseService.createAdminClient();
     const supabase = this.supabaseService.createServerClient();
     const { data: profile, error: profileError } = await admin
@@ -471,8 +658,9 @@ export class CustomerProfileService {
       .update({ password_updated_at: passwordUpdatedAt })
       .eq("id", session.userId);
 
+    // Treat this as best-effort so a successful auth password change doesn't look like a failure.
     if (error) {
-      throw new InternalServerErrorException("Password updated but profile security details could not be saved.");
+      return this.getCustomerProfile(session);
     }
 
     await this.logCustomerEvent(

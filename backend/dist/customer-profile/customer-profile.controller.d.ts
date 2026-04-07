@@ -43,6 +43,18 @@ export declare class CustomerProfileController {
             timeLabel: string;
         }[];
     }>;
+    getSavedRecipients(request: Request): Promise<{
+        recipients: {
+            id: string;
+            name: string;
+            phone: string;
+            address: string;
+            initial: string;
+            frequency: number;
+            lastUsed: string;
+            createdAt: string;
+        }[];
+    }>;
     updateProfile(request: Request, body: Record<string, unknown>): Promise<{
         profile: {
             id: any;
@@ -142,6 +154,19 @@ export declare class CustomerProfileController {
             createdAt: any;
             timeLabel: string;
         }[];
+    }>;
+    quickSaveRecipient(request: Request, body: Record<string, unknown>): Promise<{
+        recipient: {
+            id: string;
+            name: string;
+            phone: string;
+            address: string;
+            initial: string;
+            frequency: number;
+            lastUsed: string;
+            createdAt: string;
+        };
+        alreadySaved: boolean;
     }>;
     setupTwoFactor(request: Request): Promise<{
         secret: string;

@@ -20,10 +20,15 @@ type UpdateCustomerProfileInput = {
     dob?: string;
     preferences?: Partial<CustomerPreferences>;
 };
+type QuickSaveRecipientInput = {
+    name: string;
+    phone: string;
+};
 export declare class CustomerProfileService {
     private readonly supabaseService;
     private readonly customerNotificationsService;
     constructor(supabaseService: SupabaseService, customerNotificationsService: CustomerNotificationsService);
+    private ensureStorageBucket;
     getCustomerProfile(session: SessionPayload): Promise<{
         profile: {
             id: any;
@@ -95,6 +100,31 @@ export declare class CustomerProfileService {
             createdAt: any;
             timeLabel: string;
         }[];
+    }>;
+    getSavedRecipients(session: SessionPayload): Promise<{
+        recipients: {
+            id: string;
+            name: string;
+            phone: string;
+            address: string;
+            initial: string;
+            frequency: number;
+            lastUsed: string;
+            createdAt: string;
+        }[];
+    }>;
+    quickSaveRecipient(session: SessionPayload, input: QuickSaveRecipientInput): Promise<{
+        recipient: {
+            id: string;
+            name: string;
+            phone: string;
+            address: string;
+            initial: string;
+            frequency: number;
+            lastUsed: string;
+            createdAt: string;
+        };
+        alreadySaved: boolean;
     }>;
     uploadProfilePicture(session: SessionPayload, file: UploadedFile | undefined): Promise<{
         profilePicture: string;

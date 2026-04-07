@@ -7,8 +7,30 @@ export declare class ParcelDraftsService {
     private readonly customerNotificationsService;
     private readonly supabaseService;
     constructor(repository: ParcelDraftsRepository, customerNotificationsService: CustomerNotificationsService, supabaseService: SupabaseService);
+    estimateRoute(user: SessionPayload, body: Record<string, unknown>): Promise<{
+        distanceKm: number;
+        durationMinutes: number;
+        distanceText: string;
+        durationText: string;
+        pickupAddress: string;
+        deliveryAddress: string;
+    }>;
+    getAvailableHubs(user: SessionPayload): Promise<{
+        hubs: {
+            id: string;
+            name: string;
+            address: string;
+            distance: string;
+            status: string;
+            capacity: string;
+        }[];
+    }>;
     saveRouteDetails(user: SessionPayload, body: Record<string, unknown>): Promise<{
         draftId: any;
+        distance: string;
+        duration: string;
+        distanceKm: number;
+        durationMinutes: number;
     }>;
     getDraftDetails(user: SessionPayload, draftId: string, itemsLimit?: number): Promise<{
         draft: {

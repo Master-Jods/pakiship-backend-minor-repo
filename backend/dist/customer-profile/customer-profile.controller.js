@@ -27,6 +27,9 @@ let CustomerProfileController = class CustomerProfileController {
     getProfile(request) {
         return this.customerProfileService.getCustomerProfile(getSessionUser(request));
     }
+    getSavedRecipients(request) {
+        return this.customerProfileService.getSavedRecipients(getSessionUser(request));
+    }
     updateProfile(request, body) {
         return this.customerProfileService.updateCustomerProfile(getSessionUser(request), {
             fullName: body.fullName ? String(body.fullName) : undefined,
@@ -48,6 +51,12 @@ let CustomerProfileController = class CustomerProfileController {
     changePassword(request, body) {
         return this.customerProfileService.changePassword(getSessionUser(request), String(body.currentPassword ?? ""), String(body.newPassword ?? ""));
     }
+    quickSaveRecipient(request, body) {
+        return this.customerProfileService.quickSaveRecipient(getSessionUser(request), {
+            name: String(body.name ?? ""),
+            phone: String(body.phone ?? ""),
+        });
+    }
     setupTwoFactor(request) {
         return this.customerProfileService.createTwoFactorSetup(getSessionUser(request));
     }
@@ -66,6 +75,13 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], CustomerProfileController.prototype, "getProfile", null);
+__decorate([
+    (0, common_1.Get)("recipients"),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], CustomerProfileController.prototype, "getSavedRecipients", null);
 __decorate([
     (0, common_1.Patch)(),
     __param(0, (0, common_1.Req)()),
@@ -100,6 +116,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], CustomerProfileController.prototype, "changePassword", null);
+__decorate([
+    (0, common_1.Post)("recipients"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], CustomerProfileController.prototype, "quickSaveRecipient", null);
 __decorate([
     (0, common_1.Post)("two-factor/setup"),
     __param(0, (0, common_1.Req)()),

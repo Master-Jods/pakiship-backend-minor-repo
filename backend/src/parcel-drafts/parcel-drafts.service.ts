@@ -17,6 +17,40 @@ import { CustomerNotificationsService } from "../customer-notifications/customer
 import { SupabaseService } from "../supabase/supabase.service";
 
 const PHONE_REGEX = /^09\d{9}$/;
+const AVAILABLE_HUBS = [
+  {
+    id: "hub-1",
+    name: "SM North EDSA PakiHub",
+    address: "North Ave, Quezon City",
+    distance: "1.2 km",
+    status: "Open",
+    capacity: "High",
+  },
+  {
+    id: "hub-2",
+    name: "Cubao Expo Terminal",
+    address: "Socorro, Quezon City",
+    distance: "4.5 km",
+    status: "Busy",
+    capacity: "Medium",
+  },
+  {
+    id: "hub-3",
+    name: "BGC High Street Hub",
+    address: "Taguig, Metro Manila",
+    distance: "12.0 km",
+    status: "Open",
+    capacity: "Full",
+  },
+  {
+    id: "hub-4",
+    name: "Makati Central Hub",
+    address: "Ayala Ave, Makati",
+    distance: "15.3 km",
+    status: "Open",
+    capacity: "High",
+  },
+];
 
 type DraftItemInput = {
   size?: unknown;
@@ -87,6 +121,34 @@ function getHistoryType(items: Array<{ item_type?: string | null; delivery_guara
   return "Parcel Delivery";
 }
 
+function hashAddressSeed(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 10000;
+  }
+
+  return hash;
+}
+
+function createRouteEstimate(pickupAddress: string, deliveryAddress: string) {
+  const combinedSeed = hashAddressSeed(
+    `${pickupAddress.toLowerCase()}::${deliveryAddress.toLowerCase()}`,
+  );
+  const baseDistance = 2 + (combinedSeed % 240) / 10;
+  const distanceKm = Math.max(1.5, Number(baseDistance.toFixed(1)));
+  const durationMinutes = Math.max(12, Math.round(distanceKm * 4.5 + 8));
+
+  return {
+    distanceKm,
+    durationMinutes,
+    distanceText: `${distanceKm.toFixed(1)} km`,
+    durationText:
+      durationMinutes >= 60
+        ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} mins`
+        : `${durationMinutes} mins`,
+  };
+}
+
 @Injectable()
 export class ParcelDraftsService {
   constructor(
@@ -94,6 +156,41 @@ export class ParcelDraftsService {
     private readonly customerNotificationsService: CustomerNotificationsService,
     private readonly supabaseService: SupabaseService,
   ) {}
+
+  async estimateRoute(user: SessionPayload, body: Record<string, unknown>) {
+    if (!user?.userId) {
+      throw new BadRequestException("Authenticated user is required.");
+    }
+
+    const pickupAddress = asNonEmptyString(
+      (body.pickupLocation as { address?: unknown } | undefined)?.address,
+    );
+    const deliveryAddress = asNonEmptyString(
+      (body.deliveryLocation as { address?: unknown } | undefined)?.address,
+    );
+
+    if (!pickupAddress || !deliveryAddress) {
+      throw new BadRequestException("Pickup and delivery locations are required.");
+    }
+
+    const estimate = createRouteEstimate(pickupAddress, deliveryAddress);
+
+    return {
+      pickupAddress,
+      deliveryAddress,
+      ...estimate,
+    };
+  }
+
+  async getAvailableHubs(user: SessionPayload) {
+    if (!user?.userId) {
+      throw new BadRequestException("Authenticated user is required.");
+    }
+
+    return {
+      hubs: AVAILABLE_HUBS,
+    };
+  }
 
   async saveRouteDetails(user: SessionPayload, body: Record<string, unknown>) {
     const draftId = body.draftId ? String(body.draftId) : null;
@@ -108,6 +205,8 @@ export class ParcelDraftsService {
       throw new BadRequestException("Pickup and delivery locations are required.");
     }
 
+    const estimate = createRouteEstimate(pickupAddress, deliveryAddress);
+
     const { data, error } = await this.repository.saveStepOneDraft(draftId, user.userId, {
       pickup_address: pickupAddress,
       pickup_details: asNonEmptyString(
@@ -117,8 +216,8 @@ export class ParcelDraftsService {
       delivery_details: asNonEmptyString(
         (body.deliveryLocation as { details?: unknown } | undefined)?.details,
       ),
-      distance_text: asNonEmptyString(body.distance),
-      duration_text: asNonEmptyString(body.duration),
+      distance_text: asNonEmptyString(body.distance) ?? estimate.distanceText,
+      duration_text: asNonEmptyString(body.duration) ?? estimate.durationText,
       step_completed: 1,
       status: "draft",
     });
@@ -129,7 +228,13 @@ export class ParcelDraftsService {
       );
     }
 
-    return { draftId: data.id };
+    return {
+      draftId: data.id,
+      distance: estimate.distanceText,
+      duration: estimate.durationText,
+      distanceKm: estimate.distanceKm,
+      durationMinutes: estimate.durationMinutes,
+    };
   }
 
   async getDraftDetails(user: SessionPayload, draftId: string, itemsLimit?: number) {

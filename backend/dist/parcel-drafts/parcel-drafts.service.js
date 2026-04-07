@@ -16,6 +16,40 @@ const parcel_drafts_constants_1 = require("./parcel-drafts.constants");
 const customer_notifications_service_1 = require("../customer-notifications/customer-notifications.service");
 const supabase_service_1 = require("../supabase/supabase.service");
 const PHONE_REGEX = /^09\d{9}$/;
+const AVAILABLE_HUBS = [
+    {
+        id: "hub-1",
+        name: "SM North EDSA PakiHub",
+        address: "North Ave, Quezon City",
+        distance: "1.2 km",
+        status: "Open",
+        capacity: "High",
+    },
+    {
+        id: "hub-2",
+        name: "Cubao Expo Terminal",
+        address: "Socorro, Quezon City",
+        distance: "4.5 km",
+        status: "Busy",
+        capacity: "Medium",
+    },
+    {
+        id: "hub-3",
+        name: "BGC High Street Hub",
+        address: "Taguig, Metro Manila",
+        distance: "12.0 km",
+        status: "Open",
+        capacity: "Full",
+    },
+    {
+        id: "hub-4",
+        name: "Makati Central Hub",
+        address: "Ayala Ave, Makati",
+        distance: "15.3 km",
+        status: "Open",
+        capacity: "High",
+    },
+];
 function asNonEmptyString(value) {
     const text = String(value ?? "").trim();
     return text.length > 0 ? text : null;
@@ -67,11 +101,56 @@ function getHistoryType(items) {
     }
     return "Parcel Delivery";
 }
+function hashAddressSeed(value) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+        hash = (hash * 31 + value.charCodeAt(index)) % 10000;
+    }
+    return hash;
+}
+function createRouteEstimate(pickupAddress, deliveryAddress) {
+    const combinedSeed = hashAddressSeed(`${pickupAddress.toLowerCase()}::${deliveryAddress.toLowerCase()}`);
+    const baseDistance = 2 + (combinedSeed % 240) / 10;
+    const distanceKm = Math.max(1.5, Number(baseDistance.toFixed(1)));
+    const durationMinutes = Math.max(12, Math.round(distanceKm * 4.5 + 8));
+    return {
+        distanceKm,
+        durationMinutes,
+        distanceText: `${distanceKm.toFixed(1)} km`,
+        durationText: durationMinutes >= 60
+            ? `${Math.floor(durationMinutes / 60)} hr ${durationMinutes % 60} mins`
+            : `${durationMinutes} mins`,
+    };
+}
 let ParcelDraftsService = class ParcelDraftsService {
     constructor(repository, customerNotificationsService, supabaseService) {
         this.repository = repository;
         this.customerNotificationsService = customerNotificationsService;
         this.supabaseService = supabaseService;
+    }
+    async estimateRoute(user, body) {
+        if (!user?.userId) {
+            throw new common_1.BadRequestException("Authenticated user is required.");
+        }
+        const pickupAddress = asNonEmptyString(body.pickupLocation?.address);
+        const deliveryAddress = asNonEmptyString(body.deliveryLocation?.address);
+        if (!pickupAddress || !deliveryAddress) {
+            throw new common_1.BadRequestException("Pickup and delivery locations are required.");
+        }
+        const estimate = createRouteEstimate(pickupAddress, deliveryAddress);
+        return {
+            pickupAddress,
+            deliveryAddress,
+            ...estimate,
+        };
+    }
+    async getAvailableHubs(user) {
+        if (!user?.userId) {
+            throw new common_1.BadRequestException("Authenticated user is required.");
+        }
+        return {
+            hubs: AVAILABLE_HUBS,
+        };
     }
     async saveRouteDetails(user, body) {
         const draftId = body.draftId ? String(body.draftId) : null;
@@ -80,20 +159,27 @@ let ParcelDraftsService = class ParcelDraftsService {
         if (!pickupAddress || !deliveryAddress) {
             throw new common_1.BadRequestException("Pickup and delivery locations are required.");
         }
+        const estimate = createRouteEstimate(pickupAddress, deliveryAddress);
         const { data, error } = await this.repository.saveStepOneDraft(draftId, user.userId, {
             pickup_address: pickupAddress,
             pickup_details: asNonEmptyString(body.pickupLocation?.details),
             delivery_address: deliveryAddress,
             delivery_details: asNonEmptyString(body.deliveryLocation?.details),
-            distance_text: asNonEmptyString(body.distance),
-            duration_text: asNonEmptyString(body.duration),
+            distance_text: asNonEmptyString(body.distance) ?? estimate.distanceText,
+            duration_text: asNonEmptyString(body.duration) ?? estimate.durationText,
             step_completed: 1,
             status: "draft",
         });
         if (error || !data) {
             throw new common_1.InternalServerErrorException(draftId ? "Unable to update parcel draft." : "Unable to create parcel draft.");
         }
-        return { draftId: data.id };
+        return {
+            draftId: data.id,
+            distance: estimate.distanceText,
+            duration: estimate.durationText,
+            distanceKm: estimate.distanceKm,
+            durationMinutes: estimate.durationMinutes,
+        };
     }
     async getDraftDetails(user, draftId, itemsLimit) {
         const limit = Math.min(Math.max(itemsLimit ?? parcel_drafts_constants_1.DEFAULT_ITEMS_PAGE_SIZE, 1), parcel_drafts_constants_1.MAX_ITEMS_PAGE_SIZE);

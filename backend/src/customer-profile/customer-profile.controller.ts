@@ -29,6 +29,11 @@ export class CustomerProfileController {
     return this.customerProfileService.getCustomerProfile(getSessionUser(request));
   }
 
+  @Get("recipients")
+  getSavedRecipients(@Req() request: Request) {
+    return this.customerProfileService.getSavedRecipients(getSessionUser(request));
+  }
+
   @Patch()
   updateProfile(@Req() request: Request, @Body() body: Record<string, unknown>) {
     return this.customerProfileService.updateCustomerProfile(getSessionUser(request), {
@@ -79,6 +84,14 @@ export class CustomerProfileController {
       String(body.currentPassword ?? ""),
       String(body.newPassword ?? ""),
     );
+  }
+
+  @Post("recipients")
+  quickSaveRecipient(@Req() request: Request, @Body() body: Record<string, unknown>) {
+    return this.customerProfileService.quickSaveRecipient(getSessionUser(request), {
+      name: String(body.name ?? ""),
+      phone: String(body.phone ?? ""),
+    });
   }
 
   @Post("two-factor/setup")

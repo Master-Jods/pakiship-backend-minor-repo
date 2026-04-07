@@ -24,6 +24,19 @@ function getSessionUser(request: Request) {
 export class ParcelDraftsController {
   constructor(private readonly parcelDraftsService: ParcelDraftsService) {}
 
+  @Post("estimate-route")
+  estimateRoute(@Req() request: Request, @Body() body: Record<string, unknown>) {
+    return this.parcelDraftsService.estimateRoute(
+      getSessionUser(request),
+      body,
+    );
+  }
+
+  @Get("hubs")
+  getAvailableHubs(@Req() request: Request) {
+    return this.parcelDraftsService.getAvailableHubs(getSessionUser(request));
+  }
+
   @Post("step-1")
   saveStepOne(@Req() request: Request, @Body() body: Record<string, unknown>) {
     return this.parcelDraftsService.saveRouteDetails(

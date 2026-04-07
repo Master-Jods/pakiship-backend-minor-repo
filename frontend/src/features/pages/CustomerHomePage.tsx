@@ -29,6 +29,7 @@ import { clearClientSession, getTutorialStorageKey } from "@/lib/client-auth";
 import {
   fetchCustomerProfile,
   syncCustomerProfileToStorage,
+  uploadCustomerProfilePicture,
 } from "@/lib/customer-profile";
 import {
   clearAllCustomerNotifications,
@@ -74,6 +75,7 @@ export function CustomerHomePage() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [userName, setUserName] = useState("Guest User");
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isUploadingProfileImage, setIsUploadingProfileImage] = useState(false);
 
   // Notifications State
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -103,9 +105,28 @@ export function CustomerHomePage() {
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setProfileImage(reader.result as string);
-      reader.readAsDataURL(file);
+      setIsUploadingProfileImage(true);
+      void uploadCustomerProfilePicture(file)
+        .then(async (result) => {
+          setProfileImage(result.profilePicture);
+          localStorage.setItem("customerProfilePicture", result.profilePicture);
+          window.dispatchEvent(new Event("storage"));
+
+          try {
+            const profileResult = await fetchCustomerProfile();
+            setUserName(profileResult.profile.fullName);
+            setProfileImage(profileResult.profile.profilePicture);
+            syncCustomerProfileToStorage(profileResult.profile);
+          } catch {
+            // Keep the uploaded photo visible even if the profile refresh fails.
+          }
+        })
+        .finally(() => {
+          setIsUploadingProfileImage(false);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+        });
     }
   };
 
@@ -368,7 +389,8 @@ export function CustomerHomePage() {
 
                 <button
                   onClick={triggerFileInput}
-                  className="absolute -bottom-2 -right-2 bg-white p-2 rounded-xl shadow-lg border border-[#39B5A8]/20 text-[#39B5A8] hover:bg-[#39B5A8] hover:text-white transition-all"
+                  className="absolute -bottom-2 -right-2 bg-white p-2 rounded-xl shadow-lg border border-[#39B5A8]/20 text-[#39B5A8] hover:bg-[#39B5A8] hover:text-white transition-all disabled:opacity-60"
+                  disabled={isUploadingProfileImage}
                 >
                   <Camera className="w-4 h-4" />
                 </button>

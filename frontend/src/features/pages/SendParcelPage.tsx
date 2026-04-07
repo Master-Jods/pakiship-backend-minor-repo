@@ -37,6 +37,7 @@ import BookingConfirmationModal from "../components/BookingConfirmationModal";
 import PaymentMethodSelector from "../components/PaymentMethodSelector";
 import LocationPickerModal from "../components/LocationPickerModal";
 import { apiFetch } from "@/lib/api-client";
+import { fetchCustomerProfile } from "@/lib/customer-profile";
 
 // Assets
 const logo = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
@@ -82,8 +83,8 @@ export function SendParcelPage() {
   const [selectedService, setSelectedService] =
     useState<string>("");
   const [servicePrice, setServicePrice] = useState<number>(175);
-  const [distance] = useState<string>("12.5 km");
-  const [duration] = useState<string>("25 mins");
+  const [distance, setDistance] = useState<string>("Route pending");
+  const [duration, setDuration] = useState<string>("ETA pending");
 
   // Drop-off & Confirmation State
   const [selectedDropOffPoint, setSelectedDropOffPoint] =
@@ -110,6 +111,28 @@ export function SendParcelPage() {
       "pakiship_onboarding_completed",
     );
     if (!hasSeenOnboarding) setShowOnboarding(true);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSenderDefaults = async () => {
+      try {
+        const result = await fetchCustomerProfile();
+        if (!isMounted) return;
+
+        setSenderName((prev) => prev || result.profile.fullName || "");
+        setSenderPhone((prev) => prev || result.profile.phone || "");
+      } catch {
+        // Keep sender fields manual if the profile request fails.
+      }
+    };
+
+    void loadSenderDefaults();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const showError = (msg: string) => {
@@ -189,14 +212,31 @@ export function SendParcelPage() {
     setIsSavingStep1(true);
 
     try {
+      const estimateResponse = await apiFetch("/api/parcel-drafts/estimate-route", {
+        method: "POST",
+        body: JSON.stringify({
+          pickupLocation,
+          deliveryLocation,
+        }),
+      });
+      const estimateResult = await estimateResponse.json();
+
+      if (!estimateResponse.ok) {
+        showError(estimateResult.message || "Unable to estimate route details.");
+        return;
+      }
+
+      setDistance(estimateResult.distanceText);
+      setDuration(estimateResult.durationText);
+
       const response = await apiFetch("/api/parcel-drafts/step-1", {
         method: "POST",
         body: JSON.stringify({
           draftId,
           pickupLocation,
           deliveryLocation,
-          distance,
-          duration,
+          distance: estimateResult.distanceText,
+          duration: estimateResult.durationText,
         }),
       });
 
@@ -207,6 +247,8 @@ export function SendParcelPage() {
       }
 
       setDraftId(result.draftId);
+      setDistance(result.distance || estimateResult.distanceText);
+      setDuration(result.duration || estimateResult.durationText);
       setCurrentStep(2);
     } catch {
       showError("Unable to save route details.");
@@ -236,6 +278,12 @@ export function SendParcelPage() {
         }
         if (Array.isArray(result.draft?.items)) {
           setCartItems(result.draft.items);
+        }
+        if (result.draft?.distance) {
+          setDistance(result.draft.distance);
+        }
+        if (result.draft?.duration) {
+          setDuration(result.draft.duration);
         }
       } finally {
         setIsLoadingDraft(false);

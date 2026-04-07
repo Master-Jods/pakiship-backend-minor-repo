@@ -24,11 +24,6 @@ import {
 // Assets
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
 
-function getStoredValue(key: string) {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(key);
-}
-
 export function EditProfilePage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,37 +43,29 @@ export function EditProfilePage() {
   const [isSubmittingTwoFactor, setIsSubmittingTwoFactor] = useState(false);
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
   
-  const [profilePicture, setProfilePicture] = useState<string | null>(() =>
-    getStoredValue('customerProfilePicture'),
-  );
+  const [profilePicture, setProfilePicture] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState(() => ({
-    name: getStoredValue('userName') || '',
-    email: getStoredValue('userEmail') || 'guest@pakiship.ph',
-    phone: getStoredValue('userPhone') || '09123456789',
-    address: getStoredValue('userAddress') || '123 Ayala Ave, Makati City',
-    dob: getStoredValue('userDOB') || '',
-  }));
+  const [formData, setFormData] = useState({
+    name: '',
+    email: 'guest@pakiship.ph',
+    phone: '09123456789',
+    address: '123 Ayala Ave, Makati City',
+    dob: '',
+  });
 
-  const [preferences, setPreferences] = useState(() => ({
-    emailNotifications: getStoredValue('emailNotifications') === 'true',
-    smsUpdates: getStoredValue('smsUpdates') === 'true',
-    autoExtend: getStoredValue('autoExtend') === 'true',
-  }));
+  const [preferences, setPreferences] = useState({
+    emailNotifications: false,
+    smsUpdates: false,
+    autoExtend: false,
+  });
 
   const [passwordData, setPasswordData] = useState({ current: '', new: '' });
-  const [idUploaded, setIdUploaded] = useState(
-    () => getStoredValue('discountIdUploaded') === 'true',
-  );
+  const [idUploaded, setIdUploaded] = useState(false);
   const [discountStatus, setDiscountStatus] = useState<'not_uploaded' | 'pending' | 'verified' | 'rejected'>('not_uploaded');
   const [discountIdType, setDiscountIdType] = useState('');
   const [discountIdFileUrl, setDiscountIdFileUrl] = useState<string | null>(null);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(
-    () => getStoredValue('twoFactorEnabled') === 'true',
-  );
-  const [passwordUpdatedAt, setPasswordUpdatedAt] = useState<string | null>(
-    () => getStoredValue('passwordUpdatedAt'),
-  );
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [passwordUpdatedAt, setPasswordUpdatedAt] = useState<string | null>(null);
   const [customerStats, setCustomerStats] = useState([
     { label: 'Total Bookings', value: '0' },
     { label: 'Active Bookings', value: '0' },
@@ -121,6 +108,12 @@ export function EditProfilePage() {
       })),
     );
     syncCustomerProfileToStorage(result.profile);
+  };
+
+  const refreshCustomerProfile = async () => {
+    const result = await fetchCustomerProfile();
+    applyProfileResponse(result);
+    return result;
   };
 
   useEffect(() => {
@@ -171,10 +164,15 @@ export function EditProfilePage() {
       setIsUploadingPhoto(true);
       const loadingToast = toast.loading('Uploading photo...');
       void uploadCustomerProfilePicture(file)
-        .then((result) => {
+        .then(async (result) => {
           setProfilePicture(result.profilePicture);
           localStorage.setItem('customerProfilePicture', result.profilePicture);
           window.dispatchEvent(new Event('storage'));
+          try {
+            await refreshCustomerProfile();
+          } catch {
+            // Keep the uploaded photo visible even if the follow-up refresh fails.
+          }
           toast.dismiss(loadingToast);
           toast.success('Profile photo updated.');
         })
@@ -197,12 +195,17 @@ export function EditProfilePage() {
       const loadingToast = toast.loading('Uploading ID...');
       setIsUploadingDiscountId(true);
       void uploadCustomerDiscountId(file)
-        .then((result) => {
+        .then(async (result) => {
           setIdUploaded(result.discountIdUploaded);
           setDiscountStatus(result.discountIdStatus);
           setDiscountIdType(result.discountIdType);
           setDiscountIdFileUrl(result.discountIdFileUrl);
-          localStorage.setItem('discountIdUploaded', 'true');
+          localStorage.setItem('discountIdUploaded', String(result.discountIdUploaded));
+          try {
+            await refreshCustomerProfile();
+          } catch {
+            // Preserve the uploaded ID state in the current session if refresh fails.
+          }
           toast.dismiss(loadingToast);
           toast.success('ID uploaded successfully. We\'ll review it shortly.');
         })
@@ -247,6 +250,16 @@ export function EditProfilePage() {
   const handlePasswordChange = async () => {
     if (!passwordData.current || !passwordData.new) {
       toast.error('Enter both your current and new passwords.');
+      return;
+    }
+
+    if (passwordData.current === passwordData.new) {
+      toast.error('Choose a new password that is different from your current password.');
+      return;
+    }
+
+    if (!/(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}/.test(passwordData.new)) {
+      toast.error('New password must be at least 8 characters and include a number and special character.');
       return;
     }
 
@@ -616,10 +629,41 @@ export function EditProfilePage() {
                           ? 'Your ID is pending verification'
                           : 'Your uploaded ID is on file'}
                     </p>
-                    {discountIdFileUrl && (
-                      <p className="text-[11px] text-gray-400">{discountIdFileUrl}</p>
+                    {discountIdType && (
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#39B5A8]">
+                        {discountIdType.replace(/_/g, ' ')}
+                      </p>
                     )}
-                    <Button 
+                    {discountIdFileUrl && (
+                      <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#39B5A8]/15 bg-[#F8FCFC] p-3 shadow-sm">
+                        {/\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(discountIdFileUrl) ? (
+                          <img
+                            src={discountIdFileUrl}
+                            alt="Uploaded discount ID"
+                            className="h-44 w-full rounded-xl object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[#39B5A8]/20 bg-white px-4">
+                            <span className="text-sm font-bold text-[#1A5D56]">Uploaded file ready</span>
+                          </div>
+                        )}
+                        <a
+                          href={discountIdFileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 block truncate text-[11px] font-medium text-[#1A5D56] underline underline-offset-2"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          View uploaded ID
+                        </a>
+                      </div>
+                    )}
+                    {discountIdFileUrl && (
+                      <p className="text-[11px] text-gray-400">
+                        Saved to your profile and ready for review.
+                      </p>
+                    )}
+                    <Button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();

@@ -1,5 +1,40 @@
 import { apiFetch } from "@/lib/api-client";
 
+async function readApiResult(response: Response) {
+  const raw = await response.text();
+
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return { message: raw };
+  }
+}
+
+function getApiErrorMessage(
+  result: Record<string, unknown>,
+  fallback: string,
+) {
+  const message = result.message;
+
+  if (typeof message === "string" && message.trim()) {
+    return message;
+  }
+
+  if (Array.isArray(message) && message.length > 0) {
+    return message.map((item) => String(item)).join(", ");
+  }
+
+  if (typeof result.error === "string" && result.error.trim()) {
+    return result.error;
+  }
+
+  return fallback;
+}
+
 export type CustomerProfile = {
   id: string;
   fullName: string;
@@ -43,12 +78,23 @@ export type CustomerProfileResponse = {
   }>;
 };
 
+export type SavedRecipient = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  initial: string;
+  frequency: number;
+  lastUsed: string;
+  createdAt?: string | null;
+};
+
 export async function fetchCustomerProfile() {
   const response = await apiFetch("/api/customer/profile");
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to load customer profile.");
+    throw new Error(getApiErrorMessage(result, "Unable to load customer profile."));
   }
 
   return result as CustomerProfileResponse;
@@ -59,13 +105,41 @@ export async function updateCustomerProfile(payload: Partial<CustomerProfile>) {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to update customer profile.");
+    throw new Error(getApiErrorMessage(result, "Unable to update customer profile."));
   }
 
   return result as CustomerProfileResponse;
+}
+
+export async function fetchSavedRecipients() {
+  const response = await apiFetch("/api/customer/profile/recipients");
+  const result = await readApiResult(response);
+
+  if (!response.ok) {
+    throw new Error(getApiErrorMessage(result, "Unable to load saved recipients."));
+  }
+
+  return result as { recipients: SavedRecipient[] };
+}
+
+export async function quickSaveRecipient(payload: { name: string; phone: string }) {
+  const response = await apiFetch("/api/customer/profile/recipients", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const result = await readApiResult(response);
+
+  if (!response.ok) {
+    throw new Error(getApiErrorMessage(result, "Unable to save this recipient."));
+  }
+
+  return result as {
+    recipient: SavedRecipient;
+    alreadySaved: boolean;
+  };
 }
 
 export async function uploadCustomerProfilePicture(file: File) {
@@ -76,10 +150,10 @@ export async function uploadCustomerProfilePicture(file: File) {
     method: "POST",
     body: formData,
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to upload your profile photo.");
+    throw new Error(getApiErrorMessage(result, "Unable to upload your profile photo."));
   }
 
   return result as { profilePicture: string };
@@ -93,10 +167,10 @@ export async function uploadCustomerDiscountId(file: File) {
     method: "POST",
     body: formData,
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to upload your ID right now.");
+    throw new Error(getApiErrorMessage(result, "Unable to upload your ID right now."));
   }
 
   return result as {
@@ -113,10 +187,10 @@ export async function changeCustomerPassword(currentPassword: string, newPasswor
     method: "POST",
     body: JSON.stringify({ currentPassword, newPassword }),
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to update your password.");
+    throw new Error(getApiErrorMessage(result, "Unable to update your password."));
   }
 
   return result as CustomerProfileResponse;
@@ -126,10 +200,10 @@ export async function setupCustomerTwoFactor() {
   const response = await apiFetch("/api/customer/profile/two-factor/setup", {
     method: "POST",
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to start two-factor setup.");
+    throw new Error(getApiErrorMessage(result, "Unable to start two-factor setup."));
   }
 
   return result as { secret: string; otpauthUri: string };
@@ -140,10 +214,10 @@ export async function enableCustomerTwoFactor(code: string) {
     method: "POST",
     body: JSON.stringify({ code }),
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to enable two-factor authentication.");
+    throw new Error(getApiErrorMessage(result, "Unable to enable two-factor authentication."));
   }
 
   return result as CustomerProfileResponse;
@@ -154,10 +228,10 @@ export async function disableCustomerTwoFactor(code: string) {
     method: "POST",
     body: JSON.stringify({ code }),
   });
-  const result = await response.json();
+  const result = await readApiResult(response);
 
   if (!response.ok) {
-    throw new Error(result.message || "Unable to disable two-factor authentication.");
+    throw new Error(getApiErrorMessage(result, "Unable to disable two-factor authentication."));
   }
 
   return result as CustomerProfileResponse;

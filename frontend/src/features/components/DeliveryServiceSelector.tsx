@@ -1,5 +1,6 @@
 import { Zap, Clock, Truck, Users, Package, AlertCircle, TrendingUp, MapPin, Car, Bike, ShieldCheck, ChevronRight, X, CheckCircle2, Navigation, Info, Search, HelpCircle, ReceiptText } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
+import { apiFetch } from "@/lib/api-client";
 
 import { 
   VehicleType, 
@@ -11,12 +12,21 @@ import {
   PricingBreakdown 
 } from "../utils/pricingCalculations";
 
-const AVAILABLE_HUBS = [
+const FALLBACK_HUBS = [
   { id: "hub-1", name: "SM North EDSA PakiHub", address: "North Ave, Quezon City", distance: "1.2 km", status: "Open", capacity: "High" },
   { id: "hub-2", name: "Cubao Expo Terminal", address: "Socorro, Quezon City", distance: "4.5 km", status: "Busy", capacity: "Medium" },
   { id: "hub-3", name: "BGC High Street Hub", address: "Taguig, Metro Manila", distance: "12.0 km", status: "Open", capacity: "Full" },
   { id: "hub-4", name: "Makati Central Hub", address: "Ayala Ave, Makati", distance: "15.3 km", status: "Open", capacity: "High" },
 ];
+
+type HubOption = {
+  id: string;
+  name: string;
+  address: string;
+  distance: string;
+  status: string;
+  capacity: string;
+};
 
 interface DeliveryServiceSelectorProps {
   distanceKm: number; 
@@ -47,7 +57,37 @@ export default function DeliveryServiceSelector({
 }: DeliveryServiceSelectorProps) {
   const [showHubPicker, setShowHubPicker] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [availableHubs, setAvailableHubs] = useState<HubOption[]>(FALLBACK_HUBS);
   const isXLPackage = packageSize === "xl";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHubs = async () => {
+      try {
+        const response = await apiFetch("/api/parcel-drafts/hubs");
+        const result = await response.json();
+
+        if (!response.ok) {
+          return;
+        }
+
+        if (isMounted && Array.isArray(result.hubs) && result.hubs.length > 0) {
+          setAvailableHubs(result.hubs);
+        }
+      } catch {
+        if (isMounted) {
+          setAvailableHubs(FALLBACK_HUBS);
+        }
+      }
+    };
+
+    void loadHubs();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const isSensitiveItem = useMemo(() => {
     if (cartItems && cartItems.length > 0) {
@@ -134,11 +174,11 @@ export default function DeliveryServiceSelector({
   }, [isSensitiveItem, selectedService, totalParcels]);
 
   const filteredHubs = useMemo(() => {
-    return AVAILABLE_HUBS.filter(hub => 
+    return availableHubs.filter(hub => 
       hub.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       hub.address.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery]);
+  }, [availableHubs, searchQuery]);
 
   const services = [
     { 

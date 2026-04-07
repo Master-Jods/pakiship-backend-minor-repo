@@ -23,6 +23,12 @@ let ParcelDraftsController = class ParcelDraftsController {
     constructor(parcelDraftsService) {
         this.parcelDraftsService = parcelDraftsService;
     }
+    estimateRoute(request, body) {
+        return this.parcelDraftsService.estimateRoute(getSessionUser(request), body);
+    }
+    getAvailableHubs(request) {
+        return this.parcelDraftsService.getAvailableHubs(getSessionUser(request));
+    }
     saveStepOne(request, body) {
         return this.parcelDraftsService.saveRouteDetails(getSessionUser(request), body);
     }
@@ -61,6 +67,21 @@ let ParcelDraftsController = class ParcelDraftsController {
     }
 };
 exports.ParcelDraftsController = ParcelDraftsController;
+__decorate([
+    (0, common_1.Post)("estimate-route"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "estimateRoute", null);
+__decorate([
+    (0, common_1.Get)("hubs"),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "getAvailableHubs", null);
 __decorate([
     (0, common_1.Post)("step-1"),
     __param(0, (0, common_1.Req)()),
