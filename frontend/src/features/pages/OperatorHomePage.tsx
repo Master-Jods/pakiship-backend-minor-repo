@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { ProfileDropdown } from "../components/ProfileDropdown";
 import { clearClientSession, getTutorialStorageKey } from "@/lib/client-auth";
+import { fetchOperatorDashboard } from "@/lib/operator-dashboard";
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
 const sadMascotImg = "https://i.imgur.com/6bx4yV2.png";
 const mascotWavingImg = "https://i.imgur.com/G4RbCRo.png";
@@ -40,6 +41,21 @@ const initialNotifications = [
   { id: 3, title: "Storage Alert", message: "Storage section B is at 90% capacity.", time: "1 hour ago", type: "warning" as const, read: true },
   { id: 4, title: "Rating Updated", message: "Your facility received a new 5-star rating!", time: "3 hours ago", type: "star" as const, read: true },
 ];
+
+const initialDashboardMetrics = {
+  kpis: {
+    incomingToday: 0,
+    currentlyStored: 0,
+    pickedUpToday: 0,
+    customersServed: 0,
+  },
+  earnings: {
+    totalEarned: 0,
+    weeklyIncrease: 0,
+    incentives: 0,
+    bonusesEarned: 0,
+  },
+};
 
 // ─── QR Scan Modal ────────────────────────────────────────────────────────────
 function QRScanModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (trackingNo: string) => void }) {
@@ -440,6 +456,7 @@ export function OperatorHomePage() {
   const [scanningParcelId, setScanningParcelId] = useState<string | null>(null);
   const [showPickupModal, setShowPickupModal] = useState(false);
   const [pickupParcel, setPickupParcel] = useState<Parcel | null>(null);
+  const [dashboardMetrics, setDashboardMetrics] = useState(initialDashboardMetrics);
 
   // ── Profile state — read from shared localStorage keys ──────────────────────
   const [userName,     setUserName]     = useState("Operator");
@@ -454,8 +471,8 @@ export function OperatorHomePage() {
 
   const unreadCount = notifications.filter(n => !n.read).length;
   const binCapacity = 72;
-  const totalEarnings = 3240;
-  const incentives = 480;
+  const totalEarnings = dashboardMetrics.earnings.totalEarned;
+  const incentives = dashboardMetrics.earnings.incentives;
   const [isDriverEnRoute] = useState(true);
 
   const handleSecureLogout = () => {
@@ -525,6 +542,30 @@ export function OperatorHomePage() {
     if (showNotifications) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showNotifications]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOperatorDashboard = async () => {
+      try {
+        const result = await fetchOperatorDashboard();
+        if (isMounted) {
+          setDashboardMetrics({
+            kpis: result.kpis,
+            earnings: result.earnings,
+          });
+        }
+      } catch {
+        // Keep zero-state values if dashboard metrics are unavailable.
+      }
+    };
+
+    void loadOperatorDashboard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const binColor = binCapacity >= 90 ? "bg-red-500" : binCapacity >= 70 ? "bg-orange-400" : "bg-[#39B5A8]";
   const binTextColor = binCapacity >= 90 ? "text-red-500" : binCapacity >= 70 ? "text-orange-400" : "text-[#39B5A8]";
@@ -640,10 +681,10 @@ export function OperatorHomePage() {
 
         {/* ── Stats ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8" ref={statsCardsRef}>
-          <StatCard icon={<ArrowDownLeft className="w-5 h-5" />} label="Incoming Today" value="24" trend="+6 this hour" color="incoming" />
-          <StatCard icon={<Package className="w-5 h-5" />} label="Currently Stored" value="18" trend="In facility" />
-          <StatCard icon={<ArrowUpRight className="w-5 h-5" />} label="Picked Up Today" value="31" trend="+5 this hour" color="success" />
-          <StatCard icon={<Users className="w-5 h-5" />} label="Customers Served" value="47" trend="Today" />
+          <StatCard icon={<ArrowDownLeft className="w-5 h-5" />} label="Incoming Today" value={String(dashboardMetrics.kpis.incomingToday)} trend="Submitted today" color="incoming" />
+          <StatCard icon={<Package className="w-5 h-5" />} label="Currently Stored" value={String(dashboardMetrics.kpis.currentlyStored)} trend="Month to date" />
+          <StatCard icon={<ArrowUpRight className="w-5 h-5" />} label="Picked Up Today" value={String(dashboardMetrics.kpis.pickedUpToday)} trend="Updated today" color="success" />
+          <StatCard icon={<Users className="w-5 h-5" />} label="Customers Served" value={String(dashboardMetrics.kpis.customersServed)} trend="Unique senders today" />
         </div>
 
         {/* ── Bin Capacity + Earnings Row ── */}
@@ -701,14 +742,14 @@ export function OperatorHomePage() {
                 <div className="bg-white/10 rounded-2xl p-4">
                   <p className="text-[10px] text-white/50 font-black uppercase tracking-widest mb-1">Total Earned</p>
                   <p className="text-2xl font-black text-white">₱{totalEarnings.toLocaleString()}</p>
-                  <p className="text-[10px] text-[#39B5A8] font-bold mt-1">+₱340 this week</p>
+                  <p className="text-[10px] text-[#39B5A8] font-bold mt-1">+₱{dashboardMetrics.earnings.weeklyIncrease.toLocaleString()} this week</p>
                 </div>
                 <div className="bg-white/10 rounded-2xl p-4">
                   <p className="text-[10px] text-white/50 font-black uppercase tracking-widest mb-1">Incentives</p>
                   <p className="text-2xl font-black text-yellow-400">₱{incentives}</p>
                   <div className="flex items-center gap-1 mt-1">
                     <Gift className="w-3 h-3 text-yellow-400" />
-                    <p className="text-[10px] text-yellow-400 font-bold">3 bonuses earned</p>
+                    <p className="text-[10px] text-yellow-400 font-bold">{dashboardMetrics.earnings.bonusesEarned} bonuses earned</p>
                   </div>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { AuthModule } from "./auth/auth.module";
 import { CustomerProfileModule } from "./customer-profile/customer-profile.module";
 import { ParcelDraftsModule } from "./parcel-drafts/parcel-drafts.module";
 import { SupabaseModule } from "./supabase/supabase.module";
+import { OperatorDashboardModule } from "./operator-dashboard/operator-dashboard.module";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { SupabaseModule } from "./supabase/supabase.module";
     CustomerNotificationsModule,
     CustomerProfileModule,
     ParcelDraftsModule,
+    OperatorDashboardModule,
   ],
 })
 export class AppModule {}
