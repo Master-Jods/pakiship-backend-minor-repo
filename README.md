@@ -28,6 +28,7 @@ Set this in [`frontend/.env.local`](/Users/jods/Downloads/pakiship-backend-minor
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 ```
 
 ## Supabase Schema (Customer Dashboard APIs)

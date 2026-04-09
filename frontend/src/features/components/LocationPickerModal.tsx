@@ -1,19 +1,25 @@
-import { useState, useRef } from "react";
-import { X, MapPin, Search, Navigation, ChevronRight, Map, LocateFixed, Loader2, AlertCircle } from "lucide-react";
-
-interface Location {
-  address: string;
-  details?: string;
-}
+import { useRef, useState } from "react";
+import {
+  AlertCircle,
+  ChevronRight,
+  Loader2,
+  LocateFixed,
+  Map,
+  MapPin,
+  Navigation,
+  Search,
+  X,
+} from "lucide-react";
+import type { DeliveryLocation } from "@/lib/location-types";
 
 interface LocationPickerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (location: Location) => void;
+  onSelect: (location: DeliveryLocation) => void;
   type: "pickup" | "delivery";
 }
 
-const popularLocations = [
+const popularLocations: DeliveryLocation[] = [
   { address: "BGC, Taguig City", details: "Bonifacio Global City" },
   { address: "Makati Central Business District", details: "Ayala Avenue" },
   { address: "Ortigas Center, Pasig City", details: "Business District" },
@@ -24,49 +30,60 @@ const popularLocations = [
   { address: "UP Diliman, Quezon City", details: "University Area" },
 ];
 
-export default function LocationPickerModal({ isOpen, onClose, onSelect, type }: LocationPickerModalProps) {
+export default function LocationPickerModal({
+  isOpen,
+  onClose,
+  onSelect,
+  type,
+}: LocationPickerModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [customAddress, setCustomAddress] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
-  
-  // New state & ref for the custom toast notification
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   if (!isOpen) return null;
 
-  const filteredLocations = popularLocations.filter((loc) =>
-    loc.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    loc.details?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredLocations = popularLocations.filter(
+    (location) =>
+      location.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      location.details?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  // Helper to show modern errors instead of browser alerts
-  const showError = (msg: string) => {
-    setErrorMsg(msg);
-    if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
-    errorTimeoutRef.current = setTimeout(() => {
-      setErrorMsg(null);
-    }, 4000); // Disappears after 4 seconds
+  const showError = (message: string) => {
+    setErrorMsg(message);
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+    }
+    errorTimeoutRef.current = setTimeout(() => setErrorMsg(null), 4000);
   };
 
-  const handleSelectLocation = (location: Location) => {
+  const resetState = () => {
+    setSearchQuery("");
+    setCustomAddress("");
+    setShowCustomInput(false);
+    setIsLocating(false);
+    setErrorMsg(null);
+  };
+
+  const handleSelectLocation = (location: DeliveryLocation) => {
     onSelect(location);
     onClose();
-    // Reset state for future openings
-    setTimeout(() => {
-      setSearchQuery("");
-      setCustomAddress("");
-      setShowCustomInput(false);
-      setIsLocating(false);
-      setErrorMsg(null);
-    }, 300);
+    window.setTimeout(resetState, 200);
   };
 
   const handleCustomSubmit = () => {
-    if (customAddress.trim()) {
-      handleSelectLocation({ address: customAddress.trim() });
+    const address = customAddress.trim();
+    if (!address) {
+      showError("Please enter an address first.");
+      return;
     }
+
+    handleSelectLocation({
+      address,
+      details: "Entered manually",
+    });
   };
 
   const handleUseCurrentLocation = () => {
@@ -81,219 +98,229 @@ export default function LocationPickerModal({ isOpen, onClose, onSelect, type }:
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
           );
           const data = await response.json();
 
-          if (data && data.display_name) {
-            handleSelectLocation({
-              address: data.display_name,
-              details: "Your Current Location"
-            });
-          } else {
-            throw new Error("Could not fetch address details");
+          if (!data?.display_name) {
+            throw new Error("Reverse geocoding failed.");
           }
+
+          handleSelectLocation({
+            address: data.display_name,
+            details: "Your Current Location",
+            lat: latitude,
+            lng: longitude,
+          });
         } catch (error) {
-          console.error("Error reverse geocoding:", error);
-          showError("Could not determine your exact street address. Please enter it manually.");
+          console.error("Error reverse geocoding location", error);
+          showError(
+            "Could not determine your exact street address. Please enter it manually.",
+          );
         } finally {
           setIsLocating(false);
         }
       },
       (error) => {
-        console.error("Geolocation error:", error);
-        let errorMessage = "Unable to retrieve your location.";
-        
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage = "Location access denied. Please enable location permissions in your browser settings.";
-            break;
-          case error.POSITION_UNAVAILABLE:
-            errorMessage = "Location information is unavailable. Please try again.";
-            break;
-          case error.TIMEOUT:
-            errorMessage = "Location request timed out. Please try again.";
-            break;
-          default:
-            errorMessage = "Unable to retrieve your location. Please enter your address manually.";
+        console.error("Geolocation error", error);
+
+        if (error.code === error.PERMISSION_DENIED) {
+          showError(
+            "Location access denied. Please enable location permissions in your browser settings.",
+          );
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          showError("Location information is unavailable. Please try again.");
+        } else if (error.code === error.TIMEOUT) {
+          showError("Location request timed out. Please try again.");
+        } else {
+          showError("Unable to retrieve your location. Please enter it manually.");
         }
-        
-        showError(errorMessage);
+
         setIsLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-[#041614]/40 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6"
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[#041614]/40 p-4 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white rounded-[1.5rem] max-w-xl w-full max-h-[85vh] flex flex-col shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-        
-        {/* Custom Toast Notification */}
+      <div className="relative flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-[1.5rem] bg-white shadow-2xl">
         {errorMsg && (
-          <div className="absolute -top-14 left-0 right-0 flex justify-center z-[110] animate-in slide-in-from-bottom-2 fade-in duration-300">
-            <div className="bg-red-50 border border-red-100 shadow-lg rounded-full px-5 py-3 flex items-center gap-3 max-w-[90%]">
-              <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-              <p className="text-sm font-semibold text-red-800 truncate">{errorMsg}</p>
-              <button 
+          <div className="absolute left-0 right-0 top-3 z-[110] flex justify-center px-4">
+            <div className="flex max-w-[90%] items-center gap-3 rounded-full border border-red-100 bg-red-50 px-5 py-3 shadow-lg">
+              <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
+              <p className="truncate text-sm font-semibold text-red-800">{errorMsg}</p>
+              <button
                 onClick={() => setErrorMsg(null)}
-                className="text-red-400 hover:text-red-600 hover:bg-red-100 p-1 rounded-full transition-colors shrink-0"
+                className="shrink-0 rounded-full p-1 text-red-400 transition-colors hover:bg-red-100 hover:text-red-600"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-100 shrink-0">
+        <div className="flex items-center justify-between border-b border-gray-100 p-5">
           <div className="flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${type === "pickup" ? "bg-[#39B5A8]/10 text-[#39B5A8]" : "bg-[#FDB833]/10 text-[#FDB833]"}`}>
-              {type === "pickup" ? <MapPin className="w-5 h-5" /> : <Navigation className="w-5 h-5" />}
+            <div
+              className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                type === "pickup"
+                  ? "bg-[#39B5A8]/10 text-[#39B5A8]"
+                  : "bg-[#FDB833]/10 text-[#FDB833]"
+              }`}
+            >
+              {type === "pickup" ? (
+                <MapPin className="h-5 w-5" />
+              ) : (
+                <Navigation className="h-5 w-5" />
+              )}
             </div>
             <div>
               <h2 className="text-lg font-bold text-[#041614]">
                 {type === "pickup" ? "Pickup Location" : "Delivery Location"}
               </h2>
-              <p className="text-sm text-gray-500 font-medium">Where are we headed?</p>
+              <p className="text-sm font-medium text-gray-500">Where are we headed?</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-full transition-colors"
+            className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
             aria-label="Close modal"
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Dynamic Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {!showCustomInput ? (
             <>
-              {/* Search Bar */}
-              <div className="p-5 pb-2 shrink-0">
+              <div className="p-5 pb-2">
                 <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-[#39B5A8] transition-colors" />
+                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-[#39B5A8]" />
                   <input
                     type="text"
                     placeholder="Search popular locations..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-11 pr-10 py-3.5 bg-gray-50 border border-transparent rounded-xl focus:bg-white focus:border-[#39B5A8]/30 focus:ring-4 focus:ring-[#39B5A8]/10 outline-none transition-all text-[#041614] font-medium placeholder:text-gray-400"
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    className="w-full rounded-xl border border-transparent bg-gray-50 py-3.5 pl-11 pr-10 font-medium text-[#041614] outline-none transition-all placeholder:text-gray-400 focus:border-[#39B5A8]/30 focus:bg-white focus:ring-4 focus:ring-[#39B5A8]/10"
                   />
                   {searchQuery && (
-                    <button 
+                    <button
                       onClick={() => setSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors"
+                      className="absolute right-3 top-1/2 rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="h-4 w-4 -translate-y-1/2" />
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Location List Area */}
-              <div className="overflow-y-auto p-5 pt-2 flex-1 space-y-2 custom-scrollbar relative">
-                
-                {/* Use Current Location Button */}
+              <div className="custom-scrollbar flex-1 space-y-2 overflow-y-auto p-5 pt-2">
                 {!searchQuery && (
                   <button
                     onClick={handleUseCurrentLocation}
                     disabled={isLocating}
-                    className="w-full p-3 mb-2 rounded-xl border border-[#39B5A8]/20 bg-[#39B5A8]/5 hover:bg-[#39B5A8]/10 focus:outline-none focus:ring-2 focus:ring-[#39B5A8]/30 transition-all text-left group flex items-center gap-4 disabled:opacity-70 disabled:cursor-not-allowed"
+                    className="mb-2 flex w-full items-center gap-4 rounded-xl border border-[#39B5A8]/20 bg-[#39B5A8]/5 p-3 text-left transition-all hover:bg-[#39B5A8]/10 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-white shadow-sm border border-[#39B5A8]/20 flex items-center justify-center shrink-0">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#39B5A8]/20 bg-white shadow-sm">
                       {isLocating ? (
-                        <Loader2 className="w-5 h-5 text-[#39B5A8] animate-spin" />
+                        <Loader2 className="h-5 w-5 animate-spin text-[#39B5A8]" />
                       ) : (
-                        <LocateFixed className="w-5 h-5 text-[#39B5A8] group-hover:scale-110 transition-transform" />
+                        <LocateFixed className="h-5 w-5 text-[#39B5A8]" />
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[#39B5A8] truncate">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-[#39B5A8]">
                         {isLocating ? "Locating you..." : "Use current location"}
                       </p>
-                      <p className="text-sm text-[#39B5A8]/70 truncate">Using GPS</p>
+                      <p className="truncate text-sm text-[#39B5A8]/70">Using GPS</p>
                     </div>
                   </button>
                 )}
 
-                {/* Filtered Locations */}
                 {filteredLocations.length > 0 ? (
                   filteredLocations.map((location, index) => (
                     <button
-                      key={index}
+                      key={`${location.address}-${index}`}
                       onClick={() => handleSelectLocation(location)}
-                      className="w-full p-3 rounded-xl border border-transparent hover:border-gray-200 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#39B5A8]/20 transition-all text-left group flex items-center gap-4"
+                      className="group flex w-full items-center gap-4 rounded-xl border border-transparent p-3 text-left transition-all hover:border-gray-200 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#39B5A8]/20"
                     >
-                      <div className="w-10 h-10 rounded-lg bg-white shadow-sm border border-gray-100 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                        <MapPin className="w-4 h-4 text-gray-400 group-hover:text-[#39B5A8] transition-colors" />
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-100 bg-white shadow-sm transition-transform group-hover:scale-105">
+                        <MapPin className="h-4 w-4 text-gray-400 transition-colors group-hover:text-[#39B5A8]" />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-[#041614] truncate">{location.address}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-[#041614]">{location.address}</p>
                         {location.details && (
-                          <p className="text-sm text-gray-500 truncate">{location.details}</p>
+                          <p className="truncate text-sm text-gray-500">{location.details}</p>
                         )}
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#39B5A8] opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                      <ChevronRight className="h-4 w-4 -translate-x-2 text-gray-300 opacity-0 transition-all group-hover:translate-x-0 group-hover:text-[#39B5A8] group-hover:opacity-100" />
                     </button>
                   ))
                 ) : (
-                  <div className="text-center py-10 px-4">
-                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <Map className="w-6 h-6 text-gray-300" />
+                  <div className="px-4 py-10 text-center">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gray-50">
+                      <Map className="h-6 w-6 text-gray-300" />
                     </div>
-                    <p className="text-gray-500 font-medium">No locations found for "{searchQuery}"</p>
+                    <p className="font-medium text-gray-500">
+                      No locations found for "{searchQuery}"
+                    </p>
                   </div>
                 )}
               </div>
 
-              {/* Enter Custom Button */}
-              <div className="p-5 border-t border-gray-100 bg-gray-50/50 shrink-0 rounded-b-[1.5rem]">
+              <div className="shrink-0 rounded-b-[1.5rem] border-t border-gray-100 bg-gray-50/50 p-5">
                 <button
                   onClick={() => setShowCustomInput(true)}
-                  className="w-full py-3.5 rounded-xl border-2 border-dashed border-[#39B5A8]/50 text-[#39B5A8] hover:bg-[#39B5A8]/5 hover:border-[#39B5A8] font-semibold transition-all focus:outline-none focus:ring-4 focus:ring-[#39B5A8]/10"
+                  className="w-full rounded-[1.25rem] border-2 border-dashed border-[#39B5A8]/40 px-5 py-4 text-center font-bold text-[#39B5A8] transition-all hover:border-[#39B5A8]/70 hover:bg-[#39B5A8]/5"
                 >
                   Cannot find it? Enter custom address
                 </button>
               </div>
             </>
           ) : (
-            /* Custom Address Input View */
-            <div className="p-6 flex flex-col h-full animate-in slide-in-from-right-4 duration-200">
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Complete Address
-                </label>
-                <textarea
-                  autoFocus
-                  value={customAddress}
-                  onChange={(e) => setCustomAddress(e.target.value)}
-                  placeholder="Enter building, street, barangay, city..."
-                  className="w-full p-4 bg-gray-50 border border-transparent rounded-xl focus:bg-white focus:border-[#39B5A8]/30 focus:ring-4 focus:ring-[#39B5A8]/10 outline-none transition-all text-[#041614] font-medium min-h-[140px] resize-none"
-                />
-              </div>
-              <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100">
+            <div className="flex flex-1 flex-col p-5">
+              <div className="mb-5 flex items-center gap-3">
                 <button
                   onClick={() => setShowCustomInput(false)}
-                  className="flex-1 py-3.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  className="rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
                 >
-                  Go Back
+                  <ChevronRight className="h-4 w-4 rotate-180" />
                 </button>
-                <button
-                  onClick={handleCustomSubmit}
-                  disabled={!customAddress.trim()}
-                  className="flex-1 py-3.5 rounded-xl bg-[#39B5A8] hover:bg-[#2D8F85] text-white font-semibold shadow-lg shadow-[#39B5A8]/20 transition-all disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-[#39B5A8]/30"
-                >
-                  Confirm Address
-                </button>
+                <div>
+                  <h3 className="font-bold text-[#041614]">Enter custom address</h3>
+                  <p className="text-sm text-gray-500">Add the exact location manually</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <textarea
+                  value={customAddress}
+                  onChange={(event) => setCustomAddress(event.target.value)}
+                  placeholder="Enter the full address, including landmarks if needed"
+                  rows={4}
+                  className="w-full resize-none rounded-2xl border border-[#39B5A8]/20 bg-white px-4 py-3 font-medium text-[#041614] outline-none transition-colors focus:border-[#39B5A8]"
+                />
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    onClick={() => setShowCustomInput(false)}
+                    className="rounded-xl border border-gray-200 px-4 py-3 font-bold text-gray-600 transition-colors hover:bg-gray-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleCustomSubmit}
+                    className="rounded-xl bg-[#39B5A8] px-4 py-3 font-bold text-white transition-colors hover:bg-[#2D8F85]"
+                  >
+                    Save address
+                  </button>
+                </div>
               </div>
             </div>
           )}

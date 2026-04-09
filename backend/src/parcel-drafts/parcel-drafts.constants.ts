@@ -6,5 +6,4 @@ export const MAX_ITEM_QUANTITY = 1000;
 export const ALLOWED_SERVICES = new Set([
   "pakishare",
   "PakiExpress",
-  "pakibusiness",
 ]);

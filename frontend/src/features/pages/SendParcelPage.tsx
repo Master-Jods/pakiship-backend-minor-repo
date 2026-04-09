@@ -38,6 +38,7 @@ import PaymentMethodSelector from "../components/PaymentMethodSelector";
 import LocationPickerModal from "../components/LocationPickerModal";
 import { apiFetch } from "@/lib/api-client";
 import { fetchCustomerProfile } from "@/lib/customer-profile";
+import type { DeliveryLocation } from "@/lib/location-types";
 
 // Assets
 const logo = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
@@ -71,14 +72,11 @@ export function SendParcelPage() {
   const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Booking Data State
-  const [pickupLocation, setPickupLocation] = useState<{
-    address: string;
-    details?: string;
-  } | null>(null);
-  const [deliveryLocation, setDeliveryLocation] = useState<{
-    address: string;
-    details?: string;
-  } | null>(null);
+  const [pickupLocation, setPickupLocation] = useState<DeliveryLocation | null>(
+    null,
+  );
+  const [deliveryLocation, setDeliveryLocation] =
+    useState<DeliveryLocation | null>(null);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [selectedService, setSelectedService] =
     useState<string>("");
@@ -105,6 +103,7 @@ export function SendParcelPage() {
   const [receiverPhone, setReceiverPhone] = useState("");
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<string>("");
+  const [codPayer, setCodPayer] = useState<"sender" | "receiver" | null>(null);
 
   useEffect(() => {
     const hasSeenOnboarding = localStorage.getItem(
@@ -149,6 +148,16 @@ export function SendParcelPage() {
   ) => {
     setSelectingFor(type);
     setShowLocationPicker(true);
+  };
+
+  const handleRouteMetricsUpdate = (eta: string, distanceText: string) => {
+    if (distanceText) {
+      setDistance(distanceText);
+    }
+
+    if (eta) {
+      setDuration(eta);
+    }
   };
 
   const handleContinueFromPackageDetails = async (
@@ -212,22 +221,32 @@ export function SendParcelPage() {
     setIsSavingStep1(true);
 
     try {
-      const estimateResponse = await apiFetch("/api/parcel-drafts/estimate-route", {
-        method: "POST",
-        body: JSON.stringify({
-          pickupLocation,
-          deliveryLocation,
-        }),
-      });
-      const estimateResult = await estimateResponse.json();
+      let resolvedDistance = distance;
+      let resolvedDuration = duration;
 
-      if (!estimateResponse.ok) {
-        showError(estimateResult.message || "Unable to estimate route details.");
-        return;
+      if (
+        !resolvedDistance ||
+        resolvedDistance === "Route pending" ||
+        !resolvedDuration ||
+        resolvedDuration === "ETA pending"
+      ) {
+        const estimateResponse = await apiFetch("/api/parcel-drafts/estimate-route", {
+          method: "POST",
+          body: JSON.stringify({
+            pickupLocation,
+            deliveryLocation,
+          }),
+        });
+        const estimateResult = await estimateResponse.json();
+
+        if (!estimateResponse.ok) {
+          showError(estimateResult.message || "Unable to estimate route details.");
+          return;
+        }
+
+        resolvedDistance = estimateResult.distanceText;
+        resolvedDuration = estimateResult.durationText;
       }
-
-      setDistance(estimateResult.distanceText);
-      setDuration(estimateResult.durationText);
 
       const response = await apiFetch("/api/parcel-drafts/step-1", {
         method: "POST",
@@ -235,8 +254,8 @@ export function SendParcelPage() {
           draftId,
           pickupLocation,
           deliveryLocation,
-          distance: estimateResult.distanceText,
-          duration: estimateResult.durationText,
+          distance: resolvedDistance,
+          duration: resolvedDuration,
         }),
       });
 
@@ -247,8 +266,8 @@ export function SendParcelPage() {
       }
 
       setDraftId(result.draftId);
-      setDistance(result.distance || estimateResult.distanceText);
-      setDuration(result.duration || estimateResult.durationText);
+      setDistance(result.distance || resolvedDistance);
+      setDuration(result.duration || resolvedDuration);
       setCurrentStep(2);
     } catch {
       showError("Unable to save route details.");
@@ -407,6 +426,11 @@ export function SendParcelPage() {
       return;
     }
 
+    if (selectedPaymentMethod === "cash" && !codPayer) {
+      showError("Please choose whether the sender or receiver will pay for COD.");
+      return;
+    }
+
     setIsSubmittingBooking(true);
 
     try {
@@ -422,6 +446,8 @@ export function SendParcelPage() {
           receiverName,
           receiverPhone,
           paymentMethod: selectedPaymentMethod,
+          paymentResponsibility:
+            selectedPaymentMethod === "cash" ? codPayer : null,
           selectedService,
           servicePrice,
           totalParcels,
@@ -606,7 +632,10 @@ export function SendParcelPage() {
                 <MapPreview
                   pickupAddress={pickupLocation.address}
                   deliveryAddress={deliveryLocation.address}
+                  pickupLocation={pickupLocation}
+                  deliveryLocation={deliveryLocation}
                   estimatedTime={duration}
+                  onETAUpdate={handleRouteMetricsUpdate}
                 />
               </div>
             )}
@@ -846,6 +875,8 @@ export function SendParcelPage() {
                 <PaymentMethodSelector
                   selectedMethod={selectedPaymentMethod}
                   onSelect={setSelectedPaymentMethod}
+                  codPayer={codPayer}
+                  onSelectCodPayer={setCodPayer}
                   selectedServiceId={selectedService}
                   receiverName={receiverName}
                   receiverPhone={receiverPhone}
@@ -882,6 +913,15 @@ export function SendParcelPage() {
                             {
                               label: "Items",
                               value: `${cartItems.reduce((sum, item) => sum + item.quantity, 0).toString().padStart(2, '0')} Parcels`,
+                            },
+                            {
+                              label: "Payment",
+                              value:
+                                selectedPaymentMethod === "cash"
+                                  ? `COD - ${codPayer === "sender" ? "Sender" : codPayer === "receiver" ? "Receiver" : "Select payer"}`
+                                  : selectedPaymentMethod
+                                    ? selectedPaymentMethod.toUpperCase()
+                                    : "Not selected",
                             },
                             { label: "Route", value: distance || "0.0 km" },
                           ].map((item, i) => (

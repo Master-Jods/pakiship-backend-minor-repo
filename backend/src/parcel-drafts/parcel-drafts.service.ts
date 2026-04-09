@@ -206,6 +206,8 @@ export class ParcelDraftsService {
     }
 
     const estimate = createRouteEstimate(pickupAddress, deliveryAddress);
+    const savedDistance = asNonEmptyString(body.distance) ?? estimate.distanceText;
+    const savedDuration = asNonEmptyString(body.duration) ?? estimate.durationText;
 
     const { data, error } = await this.repository.saveStepOneDraft(draftId, user.userId, {
       pickup_address: pickupAddress,
@@ -216,8 +218,8 @@ export class ParcelDraftsService {
       delivery_details: asNonEmptyString(
         (body.deliveryLocation as { details?: unknown } | undefined)?.details,
       ),
-      distance_text: asNonEmptyString(body.distance) ?? estimate.distanceText,
-      duration_text: asNonEmptyString(body.duration) ?? estimate.durationText,
+      distance_text: savedDistance,
+      duration_text: savedDuration,
       step_completed: 1,
       status: "draft",
     });
@@ -230,8 +232,8 @@ export class ParcelDraftsService {
 
     return {
       draftId: data.id,
-      distance: estimate.distanceText,
-      duration: estimate.durationText,
+      distance: savedDistance,
+      duration: savedDuration,
       distanceKm: estimate.distanceKm,
       durationMinutes: estimate.durationMinutes,
     };

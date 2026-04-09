@@ -8,5 +8,4 @@ exports.MAX_ITEM_QUANTITY = 1000;
 exports.ALLOWED_SERVICES = new Set([
     "pakishare",
     "PakiExpress",
-    "pakibusiness",
 ]);

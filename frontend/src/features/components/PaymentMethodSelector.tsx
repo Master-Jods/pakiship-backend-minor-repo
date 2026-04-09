@@ -12,6 +12,9 @@ import {
   ChevronDown,
   Building2,
   Lock,
+  User,
+  Users,
+  X,
 } from "lucide-react";
 import {
   fetchSavedRecipients,
@@ -24,6 +27,8 @@ const mayaLogo = "/assets/255b60762629fecd2f88e79db44bd4b5835e1c02.png";
 interface PaymentMethodSelectorProps {
   selectedMethod: string;
   onSelect: (method: string) => void;
+  codPayer?: "sender" | "receiver" | null;
+  onSelectCodPayer: (payer: "sender" | "receiver" | null) => void;
   selectedServiceId: string;
   receiverName: string;
   receiverPhone: string;
@@ -36,6 +41,8 @@ const isLikelyPHMobile = (phone: string = "") => /^09\d{9}$/.test(phone);
 export default function PaymentMethodSelector({
   selectedMethod,
   onSelect,
+  codPayer = null,
+  onSelectCodPayer,
   selectedServiceId,
   receiverName,
   receiverPhone,
@@ -45,9 +52,10 @@ export default function PaymentMethodSelector({
   const [hasSaved, setHasSaved] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showCodPayerModal, setShowCodPayerModal] = useState(false);
 
   // LOGIC DEFINITIONS
-  const isCashAllowed = selectedServiceId !== "pakishare" && selectedServiceId !== "pakibusiness";
+  const isCashAllowed = selectedServiceId !== "pakishare";
   const isDigitalAllowed = true; 
 
   const [contacts, setContacts] = useState<SavedRecipient[]>([]);
@@ -87,10 +95,17 @@ export default function PaymentMethodSelector({
   // AUTO-CORRECTION LOGIC
   useEffect(() => {
     if (!isCashAllowed && selectedMethod === 'cash') {
-      onSelect('gcash'); 
+      onSelect('gcash');
+      onSelectCodPayer(null);
       setExpandedSection('ewallet');
     }
-  }, [selectedServiceId, selectedMethod, onSelect, isCashAllowed]);
+  }, [selectedServiceId, selectedMethod, onSelect, onSelectCodPayer, isCashAllowed]);
+
+  useEffect(() => {
+    if (selectedMethod !== "cash" && codPayer) {
+      onSelectCodPayer(null);
+    }
+  }, [selectedMethod, codPayer, onSelectCodPayer]);
 
   const handleContactSelect = (contact: SavedRecipient) => {
     // This strictly updates the input fields/state and does not trigger modal navigation
@@ -140,6 +155,17 @@ export default function PaymentMethodSelector({
         error instanceof Error ? error.message : "Unable to save this recipient.",
       );
     }
+  };
+
+  const handleSelectCash = () => {
+    setExpandedSection(null);
+    setShowCodPayerModal(true);
+  };
+
+  const handleConfirmCodPayer = (payer: "sender" | "receiver") => {
+    onSelect("cash");
+    onSelectCodPayer(payer);
+    setShowCodPayerModal(false);
   };
 
   return (
@@ -309,10 +335,7 @@ export default function PaymentMethodSelector({
             <button 
               type="button"
               disabled={!isCashAllowed}
-              onClick={() => {
-                onSelect('cash');
-                setExpandedSection(null);
-              }}
+              onClick={handleSelectCash}
               className="w-full p-5 flex items-center justify-between bg-transparent outline-none focus:outline-none"
             >
               <div className="flex items-center gap-4">
@@ -322,7 +345,11 @@ export default function PaymentMethodSelector({
                 <div className="text-left">
                   <p className={`text-sm font-bold ${!isCashAllowed ? 'text-slate-400' : 'text-slate-800'}`}>Cash on Delivery</p>
                   <p className={`text-xs ${!isCashAllowed ? 'text-slate-400' : 'text-slate-400'}`}>
-                    {isCashAllowed ? 'Pay upon arrival' : 'Unavailable for this service'}
+                    {isCashAllowed
+                      ? codPayer
+                        ? `Paid by ${codPayer === "sender" ? "Sender" : "Receiver"}`
+                        : 'Pay upon arrival'
+                      : 'Unavailable for this service'}
                   </p>
                 </div>
               </div>
@@ -347,6 +374,83 @@ export default function PaymentMethodSelector({
           </div>
         </div>
       </div>
+
+      {showCodPayerModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close COD payer modal"
+            className="absolute inset-0 bg-[#041614]/55 backdrop-blur-sm"
+            onClick={() => setShowCodPayerModal(false)}
+          />
+          <div className="relative w-full max-w-md rounded-[2rem] border border-slate-100 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#39B5A8]">
+                  Cash on Delivery
+                </p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">
+                  Who will pay?
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Choose who will hand over the cash once the parcel is delivered.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCodPayerModal(false)}
+                className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => handleConfirmCodPayer("sender")}
+                className={`flex w-full items-center justify-between rounded-[1.5rem] border-2 p-4 text-left transition-all ${
+                  codPayer === "sender"
+                    ? "border-[#39B5A8] bg-[#F0F9F8]"
+                    : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="rounded-xl bg-emerald-50 p-3 text-emerald-600">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Sender</p>
+                    <p className="text-xs text-slate-500">Pickup-side customer pays the COD amount</p>
+                  </div>
+                </div>
+                {codPayer === "sender" && <CheckCircle className="h-5 w-5 text-[#39B5A8]" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleConfirmCodPayer("receiver")}
+                className={`flex w-full items-center justify-between rounded-[1.5rem] border-2 p-4 text-left transition-all ${
+                  codPayer === "receiver"
+                    ? "border-[#39B5A8] bg-[#F0F9F8]"
+                    : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="rounded-xl bg-sky-50 p-3 text-sky-600">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Receiver</p>
+                    <p className="text-xs text-slate-500">Destination-side customer pays the COD amount</p>
+                  </div>
+                </div>
+                {codPayer === "receiver" && <CheckCircle className="h-5 w-5 text-[#39B5A8]" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

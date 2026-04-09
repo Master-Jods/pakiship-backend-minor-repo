@@ -122,14 +122,6 @@ export default function DeliveryServiceSelector({
         hops: relayHops,
         applyDiscount: true, 
       });
-    } else if (id === "pakibusiness") {
-      return calculatePricing({
-        ...params,
-        vehicleType: isXLPackage ? VehicleType.SEDAN : VehicleType.MOTORCYCLE,
-        deliveryMode: DeliveryMode.DIRECT,
-        serviceOption: ServiceOption.FAST,
-        applyDiscount: totalParcels >= 10,
-      });
     } else {
       return calculatePricing({
         ...params,
@@ -202,18 +194,6 @@ export default function DeliveryServiceSelector({
       available: isSensitiveItem ? true : totalParcels <= 3,
       note: totalParcels > 3 && !isSensitiveItem ? "Max 3 parcels" : null,
       rules: ["₱50 Base + ₱10/km", "Cash on Delivery OK", "Safe for Food & Fragile"]
-    },
-    { 
-      id: "pakibusiness", 
-      name: "PakiBusiness", 
-      icon: <Truck className="w-5 h-5" />, 
-      desc: "Fleet Bulk", 
-      time: "1-2 hrs", 
-      available: totalParcels >= 10 && !isSensitiveItem,
-      note: isSensitiveItem 
-        ? "Not available for Food or Fragile items" 
-        : totalParcels < 10 ? "Min. 10 parcels required" : null,
-      rules: ["35% Bulk Discount applied", "Digital Payment Only", "Business dashboard access"]
     },
   ];
 
