@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Package, ArrowLeft, CheckCircle2, Clock, QrCode, ChevronRight,
@@ -37,17 +37,21 @@ const receivedTodayParcels: DropoffParcel[] = [
   { id: "r5", trackingNumber: "PKS-2026-001205", sender: "ZaloraPH", recipient: "Mark Garcia", expectedArrival: "1:00 PM", receivedAt: "1:03 PM", status: "received", packageSize: "Medium", origin: "Ortigas" },
 ];
 
+const scanModalGridPattern = [
+  0, 1, 5, 6, 7, 8, 10, 11, 13, 16, 18, 19, 21, 24, 25, 27, 28, 30, 31, 34, 35,
+];
+
 // ─── QR Scan Modal (inline for this page) ────────────────────────────────────
 function ScanModal({ parcel, onClose, onSuccess }: { parcel: DropoffParcel; onClose: () => void; onSuccess: () => void }) {
   const [phase, setPhase] = useState<"scanning" | "success">("scanning");
   const [dots, setDots] = useState(".");
 
-  useState(() => {
+  useEffect(() => {
     if (phase !== "scanning") return;
     const dotInterval = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 500);
     const scanTimeout = setTimeout(() => setPhase("success"), 2800);
     return () => { clearInterval(dotInterval); clearTimeout(scanTimeout); };
-  });
+  }, [phase]);
 
   return (
     <div className="fixed inset-0 bg-[#041614]/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
@@ -64,7 +68,10 @@ function ScanModal({ parcel, onClose, onSuccess }: { parcel: DropoffParcel; onCl
                   style={{ animation: "scanLine 1.5s ease-in-out infinite" }}></div>
                 <div className="absolute inset-4 grid grid-cols-6 grid-rows-6 gap-0.5 opacity-20">
                   {Array.from({ length: 36 }).map((_, i) => (
-                    <div key={i} className={`rounded-[1px] ${[0,1,6,7,5,11,30,31,36,35,24,25].includes(i) || Math.random() > 0.5 ? 'bg-[#041614]' : ''}`}></div>
+                    <div
+                      key={i}
+                      className={`rounded-[1px] ${scanModalGridPattern.includes(i) ? 'bg-[#041614]' : ''}`}
+                    ></div>
                   ))}
                 </div>
               </div>

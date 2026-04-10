@@ -57,6 +57,10 @@ const initialDashboardMetrics = {
   },
 };
 
+const scannerGridPattern = [
+  0, 1, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20, 21, 23, 24,
+];
+
 // ─── QR Scan Modal ────────────────────────────────────────────────────────────
 function QRScanModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (trackingNo: string) => void }) {
   const [phase, setPhase] = useState<"scanning" | "success">("scanning");
@@ -83,7 +87,10 @@ function QRScanModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (
                   style={{ animation: "scanLine 1.5s ease-in-out infinite" }}></div>
                 <div className="absolute inset-4 grid grid-cols-5 grid-rows-5 gap-0.5 opacity-20">
                   {Array.from({ length: 25 }).map((_, i) => (
-                    <div key={i} className={`rounded-sm ${Math.random() > 0.4 ? 'bg-[#041614]' : 'bg-transparent'}`}></div>
+                    <div
+                      key={i}
+                      className={`rounded-sm ${scannerGridPattern.includes(i) ? 'bg-[#041614]' : 'bg-transparent'}`}
+                    ></div>
                   ))}
                 </div>
               </div>
@@ -339,7 +346,10 @@ function ProcessPickupModal({ parcel, onClose, onSuccess }: { parcel: Parcel; on
                   style={{ animation: "scanLine 1.5s ease-in-out infinite" }}></div>
                 <div className="absolute inset-4 grid grid-cols-5 grid-rows-5 gap-0.5 opacity-20">
                   {Array.from({ length: 25 }).map((_, i) => (
-                    <div key={i} className={`rounded-sm ${Math.random() > 0.4 ? 'bg-[#041614]' : 'bg-transparent'}`}></div>
+                    <div
+                      key={i}
+                      className={`rounded-sm ${scannerGridPattern.includes(i) ? 'bg-[#041614]' : 'bg-transparent'}`}
+                    ></div>
                   ))}
                 </div>
               </div>
@@ -439,6 +449,30 @@ function ProcessPickupModal({ parcel, onClose, onSuccess }: { parcel: Parcel; on
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
+function MobileOnlyModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-[#041614]/70 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
+      <div className="bg-white rounded-[2rem] w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300 overflow-hidden">
+        <div className="p-8 text-center">
+          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-[#F0F9F8]">
+            <Smartphone className="h-10 w-10 text-[#39B5A8]" />
+          </div>
+          <h2 className="mb-2 text-2xl font-black text-[#041614]">Mobile Only</h2>
+          <p className="mb-6 text-sm font-medium leading-relaxed text-gray-500">
+            QR parcel scanning is available on mobile only. Please open the operator dashboard on your phone to continue.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full rounded-2xl bg-[#39B5A8] py-3.5 text-sm font-black text-white shadow-lg transition-all hover:bg-[#2D8F85] active:scale-95"
+          >
+            Okay
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OperatorHomePage() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -447,10 +481,9 @@ export function OperatorHomePage() {
   const [tutorialStep, setTutorialStep] = useState(0);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showMobileOnlyModal, setShowMobileOnlyModal] = useState(false);
   const [notifications, setNotifications] = useState(initialNotifications);
   const [showQRModal, setShowQRModal] = useState(false);
-  const [showManualModal, setShowManualModal] = useState(false);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
   const [parcels, setParcels] = useState(mockParcels);
   const [scanningParcelId, setScanningParcelId] = useState<string | null>(null);
@@ -486,6 +519,14 @@ export function OperatorHomePage() {
   const handleScanReceive = (parcelId: string) => {
     setScanningParcelId(parcelId);
     setShowQRModal(true);
+  };
+  const handleScanParcelAction = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setShowQRModal(true);
+      return;
+    }
+
+    setShowMobileOnlyModal(true);
   };
   const handleScanSuccess = (trackingNo: string) => {
     setParcels(prev => prev.map(p =>
@@ -580,9 +621,8 @@ export function OperatorHomePage() {
           quickActionsRef={quickActionsRef} statsCardsRef={statsCardsRef}
           parcelsSectionRef={parcelsSectionRef} performanceCardRef={performanceCardRef} guideButtonRef={guideButtonRef} />
       )}
+      {showMobileOnlyModal && <MobileOnlyModal onClose={() => setShowMobileOnlyModal(false)} />}
       {showQRModal && <QRScanModal onClose={() => { setShowQRModal(false); setScanningParcelId(null); }} onSuccess={handleScanSuccess} />}
-      {showManualModal && <ManualEntryModal onClose={() => setShowManualModal(false)} onSuccess={() => setTimeout(() => setShowManualModal(false), 1800)} />}
-      {showUpdateModal && <UpdateStatusModal onClose={() => setShowUpdateModal(false)} />}
       {showLostModal && <LostParcelModal onClose={() => setShowLostModal(false)} />}
       {showPickupModal && pickupParcel && <ProcessPickupModal parcel={pickupParcel} onClose={() => { setShowPickupModal(false); setPickupParcel(null); }} onSuccess={handlePickupSuccess} />}
 
@@ -673,10 +713,8 @@ export function OperatorHomePage() {
         </div>
 
         {/* ── Actions (3 buttons) ── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8" ref={quickActionsRef}>
-          <ActionButton icon={<QrCode className="w-6 h-6" />} label="Scan Parcel" sub="Register via QR code" color="primary" onClick={() => setShowQRModal(true)} />
-          <ActionButton icon={<Smartphone className="w-6 h-6" />} label="Manual Entry" sub="Type tracking number" color="secondary" onClick={() => setShowManualModal(true)} />
-          <ActionButton icon={<RefreshCw className="w-6 h-6" />} label="Update Status" sub="Change parcel status" color="secondary" onClick={() => setShowUpdateModal(true)} />
+        <div className="mb-8 max-w-xl" ref={quickActionsRef}>
+          <ActionButton icon={<QrCode className="w-6 h-6" />} label="Scan Parcel" sub="Register via QR code" color="primary" onClick={handleScanParcelAction} />
         </div>
 
         {/* ── Stats ── */}

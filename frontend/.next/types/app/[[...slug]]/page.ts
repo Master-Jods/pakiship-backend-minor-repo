@@ -1,4 +1,4 @@
-// File: /Users/jods/Downloads/pakiship-backend-minor-repo-main/frontend/src/app/[[...slug]]/page.tsx
+// File: C:\pakiship-backend-minor-repo\frontend\src\app\[[...slug]]\page.tsx
 import * as entry from '../../../../src/app/[[...slug]]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
