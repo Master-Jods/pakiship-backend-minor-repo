@@ -8,6 +8,7 @@ export type Notification = {
   message: string;
   time: string;
   isRead: boolean;
+  createdAt?: string;
 };
 
 interface NotificationDropdownProps {

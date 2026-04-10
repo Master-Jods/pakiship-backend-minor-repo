@@ -20,6 +20,7 @@ import {
   updateCustomerProfile,
   type CustomerProfileResponse,
 } from '@/lib/customer-profile';
+import { pushLocalCustomerNotification } from '@/lib/customer-local-notifications';
 
 // Assets
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
@@ -147,6 +148,11 @@ export function EditProfilePage() {
       });
 
       applyProfileResponse(result);
+      pushLocalCustomerNotification({
+        type: 'system',
+        title: 'Profile details updated',
+        message: 'Your customer profile information was refreshed.',
+      });
       toast.dismiss(loadingToast);
       toast.success('Profile updated successfully!');
       setIsEditing(false);
@@ -173,6 +179,11 @@ export function EditProfilePage() {
           } catch {
             // Keep the uploaded photo visible even if the follow-up refresh fails.
           }
+          pushLocalCustomerNotification({
+            type: 'system',
+            title: 'Profile photo updated',
+            message: 'Your new profile photo is now visible in the app.',
+          });
           toast.dismiss(loadingToast);
           toast.success('Profile photo updated.');
         })
@@ -206,6 +217,11 @@ export function EditProfilePage() {
           } catch {
             // Preserve the uploaded ID state in the current session if refresh fails.
           }
+          pushLocalCustomerNotification({
+            type: 'system',
+            title: 'Discount ID submitted',
+            message: 'Your PWD or Senior Citizen ID was uploaded and is now pending review.',
+          });
           toast.dismiss(loadingToast);
           toast.success('ID uploaded successfully. We\'ll review it shortly.');
         })
@@ -269,6 +285,11 @@ export function EditProfilePage() {
     try {
       const result = await changeCustomerPassword(passwordData.current, passwordData.new);
       applyProfileResponse(result);
+      pushLocalCustomerNotification({
+        type: 'system',
+        title: 'Password changed',
+        message: 'Your account password was successfully updated.',
+      });
       toast.dismiss(loadingToast);
       toast.success('Password updated successfully.');
       setShowPasswordModal(false);
@@ -298,6 +319,13 @@ export function EditProfilePage() {
         ? await disableCustomerTwoFactor(twoFactorCode)
         : await enableCustomerTwoFactor(twoFactorCode);
       applyProfileResponse(result);
+      pushLocalCustomerNotification({
+        type: 'system',
+        title: twoFactorEnabled ? 'Authenticator app removed' : 'Authenticator app enabled',
+        message: twoFactorEnabled
+          ? 'Two-factor authentication was turned off for your account.'
+          : 'Two-factor authentication is now protecting your account.',
+      });
       toast.dismiss(loadingToast);
       toast.success(
         twoFactorEnabled

@@ -24,6 +24,7 @@ import {
   enableCustomerTwoFactor,
   setupCustomerTwoFactor,
 } from "@/lib/customer-profile";
+import { pushLocalCustomerNotification } from "@/lib/customer-local-notifications";
 
 const logoImg = "/assets/d0a94c34a139434e20f5cb9888d8909dd214b9e7.png";
 
@@ -89,6 +90,11 @@ export function CustomerSettingsPage() {
     setIsSavingPassword(true);
     try {
       await changeCustomerPassword(passwordData.current, passwordData.new);
+      pushLocalCustomerNotification({
+        type: "system",
+        title: "Password changed",
+        message: "Your account password was successfully updated.",
+      });
       toast.success("Password changed successfully!");
       setPasswordData({ current: "", new: "", confirm: "" });
       setShowPasswordModal(false);
@@ -144,6 +150,11 @@ export function CustomerSettingsPage() {
     setIsEnabling2FA(true);
     try {
       await enableCustomerTwoFactor(twoFactorCode.trim());
+      pushLocalCustomerNotification({
+        type: "system",
+        title: "Authenticator app enabled",
+        message: "Two-factor authentication is now protecting your account.",
+      });
       toast.success("2FA enabled successfully!");
       setShow2FAModal(false);
       setTwoFactorUri("");

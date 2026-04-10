@@ -179,10 +179,10 @@ export default function DeliveryServiceSelector({
       icon: <Users className="w-5 h-5" />, 
       desc: "Relay Economy", 
       time: "2-4 hrs", 
-      available: !isSensitiveItem && totalParcels === 1,
+      available: !isSensitiveItem,
       note: isSensitiveItem 
         ? "Strictly no Food/Fragile items allowed" 
-        : totalParcels > 1 ? "Max 1 parcel allowed" : null,
+        : totalParcels > 1 ? "Available for multiple parcels" : null,
       rules: ["₱30 per hop", "Digital Payment Only", "72hr delivery window"]
     },
     { 
@@ -191,8 +191,8 @@ export default function DeliveryServiceSelector({
       icon: <Zap className="w-5 h-5" />, 
       desc: "Direct Delivery", 
       time: "30-60 mins", 
-      available: isSensitiveItem ? true : totalParcels <= 3,
-      note: totalParcels > 3 && !isSensitiveItem ? "Max 3 parcels" : null,
+      available: true,
+      note: totalParcels > 3 && !isSensitiveItem ? "Available for 10+ parcels" : null,
       rules: ["₱50 Base + ₱10/km", "Cash on Delivery OK", "Safe for Food & Fragile"]
     },
   ];
@@ -267,8 +267,8 @@ export default function DeliveryServiceSelector({
                       <span className="w-1 h-1 bg-gray-200 rounded-full" />
                       <span className="text-[11px] font-bold text-[#39B5A8]">{service.time}</span>
                     </div>
-                    {service.note && !service.available && (
-                      <p className="text-[10px] text-red-500 font-bold mt-1 flex items-center gap-1">
+                    {service.note && (
+                      <p className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${service.available ? "text-[#39B5A8]" : "text-red-500"}`}>
                         <AlertCircle className="w-3 h-3" /> {service.note}
                       </p>
                     )}

@@ -38,6 +38,12 @@ import {
   markCustomerNotificationAsRead,
 } from "@/lib/customer-notifications";
 import {
+  clearAllLocalCustomerNotifications,
+  markAllLocalCustomerNotificationsAsRead,
+  markLocalCustomerNotificationAsRead,
+  mergeCustomerNotifications,
+} from "@/lib/customer-local-notifications";
+import {
   fetchCustomerActiveDeliveries,
   fetchCustomerAnnouncements,
   type ActiveDelivery,
@@ -150,6 +156,10 @@ export function CustomerHomePage() {
         notif.id === id ? { ...notif, isRead: true } : notif,
       ),
     );
+    if (id.startsWith("local-")) {
+      markLocalCustomerNotificationAsRead(id);
+      return;
+    }
     void markCustomerNotificationAsRead(id).catch(() => {
       // Keep optimistic UI; notifications will refresh on next page load.
     });
@@ -159,6 +169,7 @@ export function CustomerHomePage() {
     setNotifications((prev) =>
       prev.map((notif) => ({ ...notif, isRead: true })),
     );
+    markAllLocalCustomerNotificationsAsRead();
     void markAllCustomerNotificationsAsRead().catch(() => {
       // Keep optimistic UI; notifications will refresh on next page load.
     });
@@ -166,6 +177,7 @@ export function CustomerHomePage() {
 
   const handleClearAll = () => {
     setNotifications([]);
+    clearAllLocalCustomerNotifications();
     void clearAllCustomerNotifications().catch(() => {
       // Keep optimistic UI; notifications will refresh on the next poll.
     });
@@ -200,7 +212,7 @@ export function CustomerHomePage() {
       try {
         const notificationsResult = await fetchCustomerNotifications();
         if (isMounted) {
-          setNotifications(notificationsResult.notifications);
+          setNotifications(mergeCustomerNotifications(notificationsResult.notifications));
         }
       } catch {
         // Keep the latest known notification state if refresh fails.
@@ -248,7 +260,7 @@ export function CustomerHomePage() {
           { label: "Saved Vehicles", value: String(profileResult.stats.savedVehicles) },
           { label: "Account Created", value: profileResult.stats.accountCreated },
         ]);
-        setNotifications(notificationsResult.notifications);
+        setNotifications(mergeCustomerNotifications(notificationsResult.notifications));
         setAnnouncements(
           announcementsResult.announcements.filter(
             (item) => !localStorage.getItem(`dismissed_${item.id}`),
