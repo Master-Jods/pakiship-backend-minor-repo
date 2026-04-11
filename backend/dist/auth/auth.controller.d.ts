@@ -41,4 +41,7 @@ export declare class AuthController {
         authenticated: boolean;
         user: import("../common/session/session.types").SessionPayload;
     };
+    logout(response: Response): {
+        success: boolean;
+    };
 }

@@ -11,11 +11,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ParcelDraftsService = void 0;
 const common_1 = require("@nestjs/common");
+const node_crypto_1 = require("node:crypto");
 const parcel_drafts_repository_1 = require("./parcel-drafts.repository");
 const parcel_drafts_constants_1 = require("./parcel-drafts.constants");
 const customer_notifications_service_1 = require("../customer-notifications/customer-notifications.service");
 const supabase_service_1 = require("../supabase/supabase.service");
 const PHONE_REGEX = /^09\d{9}$/;
+const QR_SECRET = process.env.AUTH_SECRET || "pakiship-dev-secret";
 function asNonEmptyString(value) {
     const text = String(value ?? "").trim();
     return text.length > 0 ? text : null;
@@ -67,11 +69,79 @@ function getHistoryType(items) {
     }
     return "Parcel Delivery";
 }
+function deriveDeliveryMode(serviceId) {
+    return serviceId === "pakishare" ? "relay" : "direct";
+}
+function buildTrackingStatusLabel(progressLabel, fallbackStatus) {
+    if (progressLabel)
+        return progressLabel;
+    if (fallbackStatus === "submitted")
+        return "Booking Confirmed";
+    return fallbackStatus || "Booking Confirmed";
+}
+function normalizeDropOffPoint(dropOffPoint) {
+    const value = (dropOffPoint ?? {});
+    const id = asNonEmptyString(value.id);
+    if (!id)
+        return null;
+    return {
+        id,
+        name: asNonEmptyString(value.name) || "Frassati Partner Store",
+        address: asNonEmptyString(value.address) || "Near Frassati, Sampaloc, Manila",
+        distance: asNonEmptyString(value.distance) || "Nearby",
+        status: asNonEmptyString(value.status) || "Open",
+        capacity: asNonEmptyString(value.capacity) || "Medium",
+    };
+}
+function signQrValue(value) {
+    return (0, node_crypto_1.createHmac)("sha256", QR_SECRET).update(value).digest("hex");
+}
+function createBookingQrToken(draftId, trackingNumber) {
+    const encoded = Buffer.from(JSON.stringify({ draftId, trackingNumber })).toString("base64url");
+    return `${encoded}.${signQrValue(encoded)}`;
+}
+function readBookingQrToken(token) {
+    const [encoded, signature] = token.split(".");
+    if (!encoded || !signature || signQrValue(encoded) !== signature) {
+        return null;
+    }
+    try {
+        return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    }
+    catch {
+        return null;
+    }
+}
 let ParcelDraftsService = class ParcelDraftsService {
     constructor(repository, customerNotificationsService, supabaseService) {
         this.repository = repository;
         this.customerNotificationsService = customerNotificationsService;
         this.supabaseService = supabaseService;
+    }
+    async getDraftParcelCount(userId, draftId) {
+        const { data, error } = await this.repository.listOwnedDraftItemQuantities(draftId, userId);
+        if (error) {
+            throw new common_1.InternalServerErrorException("Unable to inspect parcel quantities right now.");
+        }
+        return (data ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
+    }
+    mapServiceDetails(draft) {
+        return {
+            id: draft.service_id || null,
+            price: Number(draft.service_price ?? 0),
+            deliveryMode: draft.delivery_mode || null,
+            isBulk: Boolean(draft.is_bulk),
+            dropOffPoint: draft.drop_off_point_id
+                ? {
+                    id: draft.drop_off_point_id,
+                    name: draft.drop_off_point_name,
+                    address: draft.drop_off_point_address,
+                    distance: draft.drop_off_point_distance_text,
+                    status: draft.drop_off_point_status,
+                    capacity: draft.drop_off_point_capacity,
+                }
+                : null,
+        };
     }
     async saveRouteDetails(user, body) {
         const draftId = body.draftId ? String(body.draftId) : null;
@@ -126,6 +196,12 @@ let ParcelDraftsService = class ParcelDraftsService {
                 stepCompleted: data.step_completed,
                 status: data.status,
                 trackingNumber: data.tracking_number,
+                service: this.mapServiceDetails(data),
+                tracking: {
+                    currentLocation: data.tracking_current_location || data.pickup_address,
+                    progressLabel: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
+                    progressPercentage: Number(data.tracking_progress_percentage ?? 0),
+                },
                 items,
             },
             pagination: {
@@ -252,7 +328,7 @@ let ParcelDraftsService = class ParcelDraftsService {
     async selectDraftService(user, draftId, body) {
         const serviceId = String(body.serviceId ?? "");
         const servicePrice = Number(body.servicePrice ?? 0);
-        const dropOffPoint = body.dropOffPoint ?? null;
+        const dropOffPoint = normalizeDropOffPoint(body.dropOffPoint);
         if (!parcel_drafts_constants_1.ALLOWED_SERVICES.has(serviceId)) {
             throw new common_1.BadRequestException("Please select a valid delivery service.");
         }
@@ -266,9 +342,22 @@ let ParcelDraftsService = class ParcelDraftsService {
         if (ownedDraft.error || !ownedDraft.data) {
             throw new common_1.NotFoundException("Parcel draft not found.");
         }
+        const totalParcels = await this.getDraftParcelCount(user.userId, draftId);
+        const isBulk = totalParcels >= parcel_drafts_constants_1.BULK_ORDER_THRESHOLD;
+        const deliveryMode = deriveDeliveryMode(serviceId);
         const updateResult = await this.repository.updateOwnedDraftState(draftId, user.userId, {
             step_completed: 4,
             status: "draft",
+            service_id: serviceId,
+            service_price: servicePrice,
+            delivery_mode: deliveryMode,
+            is_bulk: isBulk,
+            drop_off_point_id: dropOffPoint?.id ?? null,
+            drop_off_point_name: dropOffPoint?.name ?? null,
+            drop_off_point_address: dropOffPoint?.address ?? null,
+            drop_off_point_distance_text: dropOffPoint?.distance ?? null,
+            drop_off_point_status: dropOffPoint?.status ?? null,
+            drop_off_point_capacity: dropOffPoint?.capacity ?? null,
         });
         if (updateResult.error) {
             throw new common_1.InternalServerErrorException("Unable to save delivery service right now.");
@@ -280,6 +369,8 @@ let ParcelDraftsService = class ParcelDraftsService {
             service: {
                 id: serviceId,
                 price: servicePrice,
+                deliveryMode,
+                isBulk,
                 dropOffPoint,
             },
         };
@@ -311,7 +402,20 @@ let ParcelDraftsService = class ParcelDraftsService {
         if (ownedDraft.error || !ownedDraft.data) {
             throw new common_1.NotFoundException("Parcel draft not found.");
         }
+        const normalizedTotalParcels = Number.isFinite(totalParcels) && totalParcels > 0
+            ? totalParcels
+            : await this.getDraftParcelCount(user.userId, draftId);
+        const isBulk = normalizedTotalParcels >= parcel_drafts_constants_1.BULK_ORDER_THRESHOLD;
+        const deliveryMode = deriveDeliveryMode(selectedService);
         const trackingNumber = ownedDraft.data.tracking_number || createTrackingNumber();
+        const dropOffPointId = ownedDraft.data.drop_off_point_id ||
+            (deliveryMode === "relay" ? "frassati-7-eleven" : null);
+        const dropOffPointName = ownedDraft.data.drop_off_point_name ||
+            (deliveryMode === "relay" ? "7-Eleven Frassati Corner" : null);
+        const dropOffPointAddress = ownedDraft.data.drop_off_point_address ||
+            (deliveryMode === "relay" ? "Near Frassati Building, Sampaloc, Manila" : null);
+        const initialTrackingLocation = deliveryMode === "relay" && dropOffPointName ? dropOffPointName : "Pickup confirmed";
+        const initialTrackingLabel = deliveryMode === "relay" ? "Awaiting drop-off point handoff" : "Preparing for pickup";
         const updateResult = await this.repository.updateOwnedDraftState(draftId, user.userId, {
             step_completed: 5,
             status: "submitted",
@@ -320,6 +424,16 @@ let ParcelDraftsService = class ParcelDraftsService {
             sender_phone: senderPhone,
             receiver_name: receiverName,
             receiver_phone: receiverPhone,
+            service_id: selectedService,
+            service_price: servicePrice,
+            delivery_mode: deliveryMode,
+            is_bulk: isBulk,
+            drop_off_point_id: dropOffPointId,
+            drop_off_point_name: dropOffPointName,
+            drop_off_point_address: dropOffPointAddress,
+            tracking_current_location: initialTrackingLocation,
+            tracking_progress_label: initialTrackingLabel,
+            tracking_progress_percentage: deliveryMode === "relay" ? 30 : 20,
         });
         if (updateResult.error ||
             !updateResult.data ||
@@ -327,6 +441,9 @@ let ParcelDraftsService = class ParcelDraftsService {
             throw new common_1.InternalServerErrorException("Unable to complete booking right now.");
         }
         await this.customerNotificationsService.createNotification(user.userId, "delivery", "Parcel booking confirmed", `Your parcel for ${receiverName} is booked. Tracking No. ${trackingNumber}.`);
+        if (deliveryMode === "relay" && dropOffPointName) {
+            await this.customerNotificationsService.createNotification(user.userId, "delivery", "Relay drop-off point assigned", `Drop off your parcel at ${dropOffPointName} to continue relay delivery.`);
+        }
         const admin = this.supabaseService.createAdminClient();
         await admin.from("customer_activity_logs").insert({
             user_id: user.userId,
@@ -347,9 +464,18 @@ let ParcelDraftsService = class ParcelDraftsService {
                 paymentMethod,
                 selectedService,
                 servicePrice,
-                totalParcels,
+                totalParcels: normalizedTotalParcels,
                 distance,
                 duration,
+                deliveryMode,
+                isBulk,
+                dropOffPoint: deliveryMode === "relay"
+                    ? {
+                        id: dropOffPointId,
+                        name: dropOffPointName,
+                        address: dropOffPointAddress,
+                    }
+                    : null,
             },
         };
     }
@@ -362,11 +488,25 @@ let ParcelDraftsService = class ParcelDraftsService {
         const updatedTime = new Date(data.updated_at);
         return {
             trackingNumber: data.tracking_number,
-            status: data.status === "submitted" ? "Booking Confirmed" : data.status,
+            status: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
             origin: data.pickup_address,
             destination: data.delivery_address,
             estimatedDelivery: data.duration_text || "Calculating...",
             distance: data.distance_text || "Calculating...",
+            deliveryMode: data.delivery_mode || deriveDeliveryMode(data.service_id || "PakiExpress"),
+            isBulk: Boolean(data.is_bulk),
+            currentLocation: data.tracking_current_location || data.pickup_address,
+            progress: {
+                label: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
+                percentage: Number(data.tracking_progress_percentage ?? 0),
+            },
+            dropOffPoint: data.drop_off_point_id
+                ? {
+                    id: data.drop_off_point_id,
+                    name: data.drop_off_point_name,
+                    address: data.drop_off_point_address,
+                }
+                : null,
             driver: {
                 name: "Assigning driver",
                 phone: "Unavailable",
@@ -385,7 +525,7 @@ let ParcelDraftsService = class ParcelDraftsService {
                 },
                 {
                     status: "Preparing for Pickup",
-                    location: data.pickup_address,
+                    location: data.tracking_current_location || data.pickup_address,
                     timestamp: updatedTime.toLocaleTimeString("en-PH", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -393,18 +533,88 @@ let ParcelDraftsService = class ParcelDraftsService {
                     completed: data.status === "submitted",
                 },
                 {
-                    status: "In Transit",
+                    status: buildTrackingStatusLabel(data.tracking_progress_label, "In Transit"),
                     location: data.delivery_address,
                     timestamp: "Pending",
-                    completed: false,
+                    completed: Number(data.tracking_progress_percentage ?? 0) >= 60,
                 },
                 {
                     status: "Delivered",
                     location: data.delivery_address,
                     timestamp: "Pending",
-                    completed: false,
+                    completed: Number(data.tracking_progress_percentage ?? 0) >= 100,
                 },
             ],
+        };
+    }
+    async getBookingQr(user, draftId) {
+        const { data, error } = await this.repository.findOwnedSubmittedDraftById(user.userId, draftId);
+        if (error || !data) {
+            throw new common_1.NotFoundException("Booking not found for QR generation.");
+        }
+        const qrToken = createBookingQrToken(data.id, data.tracking_number);
+        return {
+            draftId: data.id,
+            trackingNumber: data.tracking_number,
+            bookingId: data.tracking_number,
+            qrToken,
+            qrValue: `pakiship://booking/${qrToken}`,
+            purpose: "View booking details only",
+            service: {
+                id: data.service_id,
+                deliveryMode: data.delivery_mode,
+                isBulk: Boolean(data.is_bulk),
+            },
+            customerView: {
+                origin: data.pickup_address,
+                destination: data.delivery_address,
+                currentLocation: data.tracking_current_location || data.pickup_address,
+                progressLabel: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
+            },
+        };
+    }
+    async scanBookingQr(user, qrToken) {
+        const payload = readBookingQrToken(qrToken);
+        if (!payload?.trackingNumber) {
+            throw new common_1.BadRequestException("QR token is invalid or expired.");
+        }
+        const result = await this.repository.findSubmittedDraftByTrackingNumber(payload.trackingNumber);
+        if (result.error || !result.data) {
+            throw new common_1.NotFoundException("Booking not found for the scanned QR code.");
+        }
+        const data = result.data;
+        const canView = user.role === "operator" ||
+            user.role === "driver" ||
+            data.user_id === user.userId;
+        if (!canView) {
+            throw new common_1.BadRequestException("You do not have access to this booking QR data.");
+        }
+        return {
+            draftId: data.id,
+            trackingNumber: data.tracking_number,
+            bookingId: data.tracking_number,
+            service: {
+                id: data.service_id,
+                deliveryMode: data.delivery_mode,
+                isBulk: Boolean(data.is_bulk),
+            },
+            booking: {
+                origin: data.pickup_address,
+                destination: data.delivery_address,
+                senderName: data.sender_name,
+                receiverName: data.receiver_name,
+                currentLocation: data.tracking_current_location || data.pickup_address,
+                progressLabel: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
+                progressPercentage: Number(data.tracking_progress_percentage ?? 0),
+            },
+            dropOffPoint: data.drop_off_point_id
+                ? {
+                    id: data.drop_off_point_id,
+                    name: data.drop_off_point_name,
+                    address: data.drop_off_point_address,
+                }
+                : null,
+            scannedBy: user.role,
         };
     }
     async getHistory(user) {
@@ -434,6 +644,10 @@ let ParcelDraftsService = class ParcelDraftsService {
                     distance: draft.distance_text,
                     duration: draft.duration_text,
                     totalParcels,
+                    deliveryMode: draft.delivery_mode || null,
+                    isBulk: Boolean(draft.is_bulk),
+                    currentLocation: draft.tracking_current_location || draft.pickup_address,
+                    progressLabel: buildTrackingStatusLabel(draft.tracking_progress_label, draft.status),
                 };
             }),
         };
@@ -463,6 +677,10 @@ let ParcelDraftsService = class ParcelDraftsService {
                 distance: data.distance_text,
                 duration: data.duration_text,
                 totalParcels,
+                deliveryMode: data.delivery_mode || null,
+                isBulk: Boolean(data.is_bulk),
+                currentLocation: data.tracking_current_location || data.pickup_address,
+                progressLabel: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
             },
             details: {
                 sender: {
@@ -474,6 +692,18 @@ let ParcelDraftsService = class ParcelDraftsService {
                     name: data.receiver_name || "Not available",
                     phone: data.receiver_phone || "Not available",
                     address: data.delivery_address,
+                },
+                service: {
+                    id: data.service_id || "Not available",
+                    deliveryMode: data.delivery_mode || "direct",
+                    isBulk: Boolean(data.is_bulk),
+                    dropOffPoint: data.drop_off_point_id
+                        ? {
+                            id: data.drop_off_point_id,
+                            name: data.drop_off_point_name,
+                            address: data.drop_off_point_address,
+                        }
+                        : null,
                 },
                 parcel: {
                     weight: firstItem?.weight_text || "Not available",
@@ -506,7 +736,7 @@ let ParcelDraftsService = class ParcelDraftsService {
                     {
                         status: historyStatus.label,
                         time: formatHistoryDate(data.updated_at),
-                        location: data.delivery_address,
+                        location: data.tracking_current_location || data.delivery_address,
                         completed: true,
                     },
                 ],

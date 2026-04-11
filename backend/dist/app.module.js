@@ -14,6 +14,8 @@ const customer_profile_module_1 = require("./customer-profile/customer-profile.m
 const parcel_drafts_module_1 = require("./parcel-drafts/parcel-drafts.module");
 const supabase_module_1 = require("./supabase/supabase.module");
 const operator_dashboard_module_1 = require("./operator-dashboard/operator-dashboard.module");
+const drop_off_points_module_1 = require("./drop-off-points/drop-off-points.module");
+const driver_bookings_module_1 = require("./driver-bookings/driver-bookings.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -26,6 +28,8 @@ exports.AppModule = AppModule = __decorate([
             customer_profile_module_1.CustomerProfileModule,
             parcel_drafts_module_1.ParcelDraftsModule,
             operator_dashboard_module_1.OperatorDashboardModule,
+            drop_off_points_module_1.DropOffPointsModule,
+            driver_bookings_module_1.DriverBookingsModule,
         ],
     })
 ], AppModule);

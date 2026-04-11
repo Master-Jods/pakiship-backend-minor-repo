@@ -9,6 +9,7 @@ const node_crypto_1 = require("node:crypto");
 exports.SESSION_COOKIE = "pakiship_session";
 const SESSION_SECRET = process.env.AUTH_SECRET || "pakiship-dev-secret";
 const ONE_WEEK_IN_SECONDS = 60 * 60 * 24 * 7;
+const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
 function sign(value) {
     return (0, node_crypto_1.createHmac)("sha256", SESSION_SECRET).update(value).digest("hex");
 }
@@ -31,12 +32,12 @@ function readSessionToken(token) {
         return null;
     }
 }
-function getSessionCookieOptions() {
+function getSessionCookieOptions(keepLoggedIn = true) {
     return {
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
-        maxAge: ONE_WEEK_IN_SECONDS * 1000,
+        maxAge: (keepLoggedIn ? ONE_WEEK_IN_SECONDS : ONE_DAY_IN_SECONDS) * 1000,
         path: "/",
     };
 }

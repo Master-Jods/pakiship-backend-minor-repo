@@ -8,11 +8,23 @@ export declare class ParcelDraftsController {
     }>;
     getTrackingDetails(request: Request, trackingNumber: string): Promise<{
         trackingNumber: any;
-        status: any;
+        status: string;
         origin: any;
         destination: any;
         estimatedDelivery: any;
         distance: any;
+        deliveryMode: any;
+        isBulk: boolean;
+        currentLocation: any;
+        progress: {
+            label: string;
+            percentage: number;
+        };
+        dropOffPoint: {
+            id: any;
+            name: any;
+            address: any;
+        };
         driver: {
             name: string;
             phone: string;
@@ -25,6 +37,50 @@ export declare class ParcelDraftsController {
             timestamp: string;
             completed: boolean;
         }[];
+    }>;
+    getBookingQr(request: Request, draftId: string): Promise<{
+        draftId: any;
+        trackingNumber: any;
+        bookingId: any;
+        qrToken: string;
+        qrValue: string;
+        purpose: string;
+        service: {
+            id: any;
+            deliveryMode: any;
+            isBulk: boolean;
+        };
+        customerView: {
+            origin: any;
+            destination: any;
+            currentLocation: any;
+            progressLabel: string;
+        };
+    }>;
+    scanBookingQr(request: Request, qrToken: string): Promise<{
+        draftId: any;
+        trackingNumber: any;
+        bookingId: any;
+        service: {
+            id: any;
+            deliveryMode: any;
+            isBulk: boolean;
+        };
+        booking: {
+            origin: any;
+            destination: any;
+            senderName: any;
+            receiverName: any;
+            currentLocation: any;
+            progressLabel: string;
+            progressPercentage: number;
+        };
+        dropOffPoint: {
+            id: any;
+            name: any;
+            address: any;
+        };
+        scannedBy: import("../common/session/session.types").UserRole;
     }>;
     getHistory(request: Request): Promise<{
         transactions: {
@@ -44,6 +100,10 @@ export declare class ParcelDraftsController {
             distance: any;
             duration: any;
             totalParcels: any;
+            deliveryMode: any;
+            isBulk: boolean;
+            currentLocation: any;
+            progressLabel: string;
         }[];
     }>;
     getHistoryDetails(request: Request, trackingNumber: string): Promise<{
@@ -62,6 +122,10 @@ export declare class ParcelDraftsController {
             distance: any;
             duration: any;
             totalParcels: any;
+            deliveryMode: any;
+            isBulk: boolean;
+            currentLocation: any;
+            progressLabel: string;
         };
         details: {
             sender: {
@@ -73,6 +137,16 @@ export declare class ParcelDraftsController {
                 name: any;
                 phone: any;
                 address: any;
+            };
+            service: {
+                id: any;
+                deliveryMode: any;
+                isBulk: boolean;
+                dropOffPoint: {
+                    id: any;
+                    name: any;
+                    address: any;
+                };
             };
             parcel: {
                 weight: any;
@@ -111,6 +185,25 @@ export declare class ParcelDraftsController {
             stepCompleted: any;
             status: any;
             trackingNumber: any;
+            service: {
+                id: string;
+                price: number;
+                deliveryMode: string;
+                isBulk: boolean;
+                dropOffPoint: {
+                    id: string;
+                    name: string;
+                    address: string;
+                    distance: string;
+                    status: string;
+                    capacity: string;
+                };
+            };
+            tracking: {
+                currentLocation: any;
+                progressLabel: string;
+                progressPercentage: number;
+            };
             items: {
                 id: any;
                 size: any;
@@ -156,7 +249,16 @@ export declare class ParcelDraftsController {
         service: {
             id: string;
             price: number;
-            dropOffPoint: unknown;
+            deliveryMode: string;
+            isBulk: boolean;
+            dropOffPoint: {
+                id: string;
+                name: string;
+                address: string;
+                distance: string;
+                status: string;
+                capacity: string;
+            };
         };
     }>;
     completeBooking(request: Request, draftId: string, body: Record<string, unknown>): Promise<{
@@ -175,6 +277,13 @@ export declare class ParcelDraftsController {
             totalParcels: number;
             distance: string;
             duration: string;
+            deliveryMode: string;
+            isBulk: boolean;
+            dropOffPoint: {
+                id: any;
+                name: any;
+                address: any;
+            };
         };
     }>;
 }

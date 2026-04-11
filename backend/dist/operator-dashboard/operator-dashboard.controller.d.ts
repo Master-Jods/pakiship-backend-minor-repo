@@ -22,4 +22,38 @@ export declare class OperatorDashboardController {
             derivedFrom: string;
         };
     }>;
+    getRelayBookings(request: Request): Promise<{
+        bookings: {
+            draftId: string;
+            trackingNumber: string;
+            pickupAddress: string;
+            deliveryAddress: string;
+            receiverName: string;
+            status: string;
+            serviceId: string;
+            deliveryMode: string;
+            isBulk: boolean;
+            totalParcels: number;
+            currentLocation: string;
+            progressLabel: string;
+            progressPercentage: number;
+            dropOffPoint: {
+                id: string;
+                name: string;
+                address: string;
+            };
+            createdAt: string;
+        }[];
+        meta: {
+            hubId: string;
+            matchedBy: string;
+        };
+    }>;
+    updateRelayBookingStatus(request: Request, draftId: string, body: Record<string, unknown>): Promise<{
+        draftId: string;
+        trackingNumber: any;
+        currentLocation: any;
+        progressLabel: any;
+        progressPercentage: number;
+    }>;
 }

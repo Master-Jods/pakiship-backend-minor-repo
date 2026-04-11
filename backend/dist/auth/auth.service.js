@@ -13,6 +13,9 @@ exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_service_1 = require("../supabase/supabase.service");
 const two_factor_util_1 = require("./two-factor.util");
+function isUserRole(value) {
+    return value === "customer" || value === "driver" || value === "operator";
+}
 function normalizeEmail(email) {
     return email.trim().toLowerCase();
 }
@@ -31,6 +34,9 @@ let AuthService = class AuthService {
         this.supabaseService = supabaseService;
     }
     async createUser(input) {
+        if (!isUserRole(input.role)) {
+            throw new common_1.BadRequestException("Please select a valid account role.");
+        }
         const admin = this.supabaseService.createAdminClient();
         const email = normalizeEmail(input.email);
         const phone = normalizePhone(input.phone);
@@ -102,6 +108,9 @@ let AuthService = class AuthService {
         };
     }
     async signIn(identifier, password, role) {
+        if (!isUserRole(role)) {
+            throw new common_1.BadRequestException("Please select a valid role before logging in.");
+        }
         const admin = this.supabaseService.createAdminClient();
         const supabase = this.supabaseService.createServerClient();
         const normalizedIdentifier = identifier.includes("@")

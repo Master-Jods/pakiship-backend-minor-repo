@@ -24,13 +24,14 @@ let AuthController = class AuthController {
         const role = body.role;
         const identifier = String(body.identifier ?? "");
         const password = String(body.password ?? "");
+        const keepLoggedIn = Boolean(body.keepLoggedIn);
         if (!role || !identifier || !password) {
             throw new common_1.BadRequestException("Role, identifier, and password are required.");
         }
         const result = await this.authService.signIn(identifier, password, role);
         const requiresTwoFactor = "requiresTwoFactor" in result && result.requiresTwoFactor;
         if (!requiresTwoFactor) {
-            response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)());
+            response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)(keepLoggedIn));
         }
         return {
             user: result.user,
@@ -42,17 +43,19 @@ let AuthController = class AuthController {
     async verifyTwoFactor(body, response) {
         const challengeToken = String(body.challengeToken ?? "");
         const code = String(body.code ?? "");
+        const keepLoggedIn = Boolean(body.keepLoggedIn);
         if (!challengeToken || !code) {
             throw new common_1.BadRequestException("Challenge token and verification code are required.");
         }
         const result = await this.authService.verifyTwoFactorLogin(challengeToken, code);
-        response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)());
+        response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)(keepLoggedIn));
         return {
             user: result.user,
             redirectPath: result.redirectPath,
         };
     }
     async signup(body, response) {
+        const keepLoggedIn = Boolean(body.keepLoggedIn ?? true);
         const requiredFields = [
             "fullName",
             "email",
@@ -83,7 +86,7 @@ let AuthController = class AuthController {
                 ? body.documents.map((item) => String(item))
                 : [],
         });
-        response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)());
+        response.cookie(session_util_1.SESSION_COOKIE, (0, session_util_1.createSessionToken)(result.session), (0, session_util_1.getSessionCookieOptions)(keepLoggedIn));
         return {
             user: result.user,
             redirectPath: result.redirectPath,
@@ -100,6 +103,13 @@ let AuthController = class AuthController {
             authenticated: true,
             user: session,
         };
+    }
+    logout(response) {
+        response.clearCookie(session_util_1.SESSION_COOKIE, {
+            ...(0, session_util_1.getSessionCookieOptions)(false),
+            maxAge: 0,
+        });
+        return { success: true };
     }
 };
 exports.AuthController = AuthController;
@@ -135,6 +145,13 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "getSession", null);
+__decorate([
+    (0, common_1.Post)("logout"),
+    __param(0, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)("auth"),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

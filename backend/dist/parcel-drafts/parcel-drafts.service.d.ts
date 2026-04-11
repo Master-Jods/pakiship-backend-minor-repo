@@ -7,6 +7,8 @@ export declare class ParcelDraftsService {
     private readonly customerNotificationsService;
     private readonly supabaseService;
     constructor(repository: ParcelDraftsRepository, customerNotificationsService: CustomerNotificationsService, supabaseService: SupabaseService);
+    private getDraftParcelCount;
+    private mapServiceDetails;
     saveRouteDetails(user: SessionPayload, body: Record<string, unknown>): Promise<{
         draftId: any;
     }>;
@@ -26,6 +28,25 @@ export declare class ParcelDraftsService {
             stepCompleted: any;
             status: any;
             trackingNumber: any;
+            service: {
+                id: string;
+                price: number;
+                deliveryMode: string;
+                isBulk: boolean;
+                dropOffPoint: {
+                    id: string;
+                    name: string;
+                    address: string;
+                    distance: string;
+                    status: string;
+                    capacity: string;
+                };
+            };
+            tracking: {
+                currentLocation: any;
+                progressLabel: string;
+                progressPercentage: number;
+            };
             items: {
                 id: any;
                 size: any;
@@ -72,7 +93,16 @@ export declare class ParcelDraftsService {
         service: {
             id: string;
             price: number;
-            dropOffPoint: unknown;
+            deliveryMode: string;
+            isBulk: boolean;
+            dropOffPoint: {
+                id: string;
+                name: string;
+                address: string;
+                distance: string;
+                status: string;
+                capacity: string;
+            };
         };
     }>;
     completeBooking(user: SessionPayload, draftId: string, body: Record<string, unknown>): Promise<{
@@ -91,15 +121,34 @@ export declare class ParcelDraftsService {
             totalParcels: number;
             distance: string;
             duration: string;
+            deliveryMode: string;
+            isBulk: boolean;
+            dropOffPoint: {
+                id: any;
+                name: any;
+                address: any;
+            };
         };
     }>;
     getTrackingDetails(user: SessionPayload, trackingNumber: string): Promise<{
         trackingNumber: any;
-        status: any;
+        status: string;
         origin: any;
         destination: any;
         estimatedDelivery: any;
         distance: any;
+        deliveryMode: any;
+        isBulk: boolean;
+        currentLocation: any;
+        progress: {
+            label: string;
+            percentage: number;
+        };
+        dropOffPoint: {
+            id: any;
+            name: any;
+            address: any;
+        };
         driver: {
             name: string;
             phone: string;
@@ -112,6 +161,50 @@ export declare class ParcelDraftsService {
             timestamp: string;
             completed: boolean;
         }[];
+    }>;
+    getBookingQr(user: SessionPayload, draftId: string): Promise<{
+        draftId: any;
+        trackingNumber: any;
+        bookingId: any;
+        qrToken: string;
+        qrValue: string;
+        purpose: string;
+        service: {
+            id: any;
+            deliveryMode: any;
+            isBulk: boolean;
+        };
+        customerView: {
+            origin: any;
+            destination: any;
+            currentLocation: any;
+            progressLabel: string;
+        };
+    }>;
+    scanBookingQr(user: SessionPayload, qrToken: string): Promise<{
+        draftId: any;
+        trackingNumber: any;
+        bookingId: any;
+        service: {
+            id: any;
+            deliveryMode: any;
+            isBulk: boolean;
+        };
+        booking: {
+            origin: any;
+            destination: any;
+            senderName: any;
+            receiverName: any;
+            currentLocation: any;
+            progressLabel: string;
+            progressPercentage: number;
+        };
+        dropOffPoint: {
+            id: any;
+            name: any;
+            address: any;
+        };
+        scannedBy: import("../common/session/session.types").UserRole;
     }>;
     getHistory(user: SessionPayload): Promise<{
         transactions: {
@@ -131,6 +224,10 @@ export declare class ParcelDraftsService {
             distance: any;
             duration: any;
             totalParcels: any;
+            deliveryMode: any;
+            isBulk: boolean;
+            currentLocation: any;
+            progressLabel: string;
         }[];
     }>;
     getHistoryDetails(user: SessionPayload, trackingNumber: string): Promise<{
@@ -149,6 +246,10 @@ export declare class ParcelDraftsService {
             distance: any;
             duration: any;
             totalParcels: any;
+            deliveryMode: any;
+            isBulk: boolean;
+            currentLocation: any;
+            progressLabel: string;
         };
         details: {
             sender: {
@@ -160,6 +261,16 @@ export declare class ParcelDraftsService {
                 name: any;
                 phone: any;
                 address: any;
+            };
+            service: {
+                id: any;
+                deliveryMode: any;
+                isBulk: boolean;
+                dropOffPoint: {
+                    id: any;
+                    name: any;
+                    address: any;
+                };
             };
             parcel: {
                 weight: any;

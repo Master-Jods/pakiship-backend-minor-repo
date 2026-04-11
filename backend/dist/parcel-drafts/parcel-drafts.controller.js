@@ -29,6 +29,12 @@ let ParcelDraftsController = class ParcelDraftsController {
     getTrackingDetails(request, trackingNumber) {
         return this.parcelDraftsService.getTrackingDetails(getSessionUser(request), trackingNumber);
     }
+    getBookingQr(request, draftId) {
+        return this.parcelDraftsService.getBookingQr(getSessionUser(request), draftId);
+    }
+    scanBookingQr(request, qrToken) {
+        return this.parcelDraftsService.scanBookingQr(getSessionUser(request), qrToken);
+    }
     getHistory(request) {
         return this.parcelDraftsService.getHistory(getSessionUser(request));
     }
@@ -77,6 +83,22 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], ParcelDraftsController.prototype, "getTrackingDetails", null);
+__decorate([
+    (0, common_1.Get)("qr/:draftId"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)("draftId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "getBookingQr", null);
+__decorate([
+    (0, common_1.Get)("qr/scan/:qrToken"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)("qrToken")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], ParcelDraftsController.prototype, "scanBookingQr", null);
 __decorate([
     (0, common_1.Get)("history"),
     __param(0, (0, common_1.Req)()),

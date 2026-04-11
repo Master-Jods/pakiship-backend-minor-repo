@@ -21,7 +21,26 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
         const supabase = this.supabaseService.createAdminClient();
         return supabase
             .from("parcel_drafts")
-            .select("id, user_id, step_completed, status, tracking_number")
+            .select(`
+          id,
+          user_id,
+          step_completed,
+          status,
+          tracking_number,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          drop_off_point_distance_text,
+          drop_off_point_status,
+          drop_off_point_capacity,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage
+        `)
             .eq("id", draftId)
             .eq("user_id", userId)
             .single();
@@ -63,6 +82,19 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
           step_completed,
           status,
           tracking_number,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          drop_off_point_distance_text,
+          drop_off_point_status,
+          drop_off_point_capacity,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
           parcel_draft_items (
             id,
             size,
@@ -130,6 +162,20 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
         const supabase = this.supabaseService.createAdminClient();
         return supabase.from("parcel_draft_items").insert(items).select("id");
     }
+    async listOwnedDraftItemQuantities(draftId, userId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_draft_items")
+            .select(`
+        quantity,
+        parcel_drafts!inner (
+          id,
+          user_id
+        )
+      `)
+            .eq("parcel_draft_id", draftId)
+            .eq("parcel_drafts.user_id", userId);
+    }
     async updateDraftItemQuantity(draftId, itemId, quantity) {
         const supabase = this.supabaseService.createAdminClient();
         return supabase
@@ -153,7 +199,7 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
             .update(patch)
             .eq("id", draftId)
             .eq("user_id", userId)
-            .select("id, status, tracking_number")
+            .select("id, status, tracking_number, service_id, delivery_mode, is_bulk")
             .single();
     }
     async findOwnedSubmittedDraftByTrackingNumber(userId, trackingNumber) {
@@ -168,6 +214,16 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
           distance_text,
           duration_text,
           status,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
           sender_name,
           sender_phone,
           receiver_name,
@@ -177,6 +233,40 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
         `)
             .eq("user_id", userId)
             .eq("tracking_number", trackingNumber)
+            .eq("status", "submitted")
+            .single();
+    }
+    async findOwnedSubmittedDraftById(userId, draftId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          created_at,
+          updated_at
+        `)
+            .eq("user_id", userId)
+            .eq("id", draftId)
             .eq("status", "submitted")
             .single();
     }
@@ -192,6 +282,16 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
           distance_text,
           duration_text,
           status,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
           sender_name,
           sender_phone,
           receiver_name,
@@ -222,6 +322,16 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
           distance_text,
           duration_text,
           status,
+          service_id,
+          service_price,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
           sender_name,
           sender_phone,
           receiver_name,
@@ -238,6 +348,226 @@ let ParcelDraftsRepository = class ParcelDraftsRepository {
         `)
             .eq("user_id", userId)
             .eq("tracking_number", trackingNumber)
+            .single();
+    }
+    async findSubmittedDraftByTrackingNumber(trackingNumber) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          user_id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          service_id,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          sender_name,
+          receiver_name,
+          created_at,
+          updated_at
+        `)
+            .eq("tracking_number", trackingNumber)
+            .eq("status", "submitted")
+            .maybeSingle();
+    }
+    async listRelayBookingsForHub(hubId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          created_at,
+          updated_at,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          service_id,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          drop_off_point_distance_text,
+          drop_off_point_status,
+          drop_off_point_capacity,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          parcel_draft_items (
+            id,
+            item_type,
+            quantity,
+            weight_text
+          )
+        `)
+            .eq("service_id", "pakishare")
+            .eq("drop_off_point_id", hubId)
+            .in("status", ["draft", "submitted"])
+            .order("updated_at", { ascending: false });
+    }
+    async listRecentRelayBookings(limit = 10) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          created_at,
+          updated_at,
+          sender_name,
+          sender_phone,
+          receiver_name,
+          receiver_phone,
+          service_id,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          drop_off_point_distance_text,
+          drop_off_point_status,
+          drop_off_point_capacity,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          parcel_draft_items (
+            id,
+            item_type,
+            quantity,
+            weight_text
+          )
+        `)
+            .eq("service_id", "pakishare")
+            .in("status", ["draft", "submitted"])
+            .order("updated_at", { ascending: false })
+            .limit(limit);
+    }
+    async findRelayBookingById(draftId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          user_id,
+          tracking_number,
+          status,
+          service_id,
+          delivery_mode,
+          drop_off_point_id,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          receiver_name
+        `)
+            .eq("id", draftId)
+            .eq("service_id", "pakishare")
+            .maybeSingle();
+    }
+    async updateRelayBookingTracking(draftId, patch) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .update(patch)
+            .eq("id", draftId)
+            .eq("service_id", "pakishare")
+            .select("id, tracking_number, tracking_current_location, tracking_progress_label, tracking_progress_percentage")
+            .single();
+    }
+    async listDriverBookingRequests(deliveryType, updatedSince) {
+        const supabase = this.supabaseService.createAdminClient();
+        let query = supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          user_id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          distance_text,
+          duration_text,
+          status,
+          created_at,
+          updated_at,
+          sender_name,
+          receiver_name,
+          service_id,
+          delivery_mode,
+          is_bulk,
+          drop_off_point_id,
+          drop_off_point_name,
+          drop_off_point_address,
+          tracking_current_location,
+          tracking_progress_label,
+          tracking_progress_percentage,
+          assigned_driver_id,
+          assigned_driver_name,
+          parcel_draft_items (
+            id,
+            item_type,
+            quantity
+          )
+        `)
+            .eq("status", "submitted")
+            .is("assigned_driver_id", null)
+            .order("updated_at", { ascending: false });
+        if (deliveryType) {
+            query = query.eq("delivery_mode", deliveryType);
+        }
+        if (updatedSince) {
+            query = query.gt("updated_at", updatedSince);
+        }
+        return query;
+    }
+    async findDriverBookingRequestById(draftId) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .select(`
+          id,
+          user_id,
+          tracking_number,
+          pickup_address,
+          delivery_address,
+          status,
+          delivery_mode,
+          drop_off_point_name,
+          assigned_driver_id
+        `)
+            .eq("id", draftId)
+            .eq("status", "submitted")
+            .maybeSingle();
+    }
+    async acceptDriverBookingRequest(draftId, patch) {
+        const supabase = this.supabaseService.createAdminClient();
+        return supabase
+            .from("parcel_drafts")
+            .update(patch)
+            .eq("id", draftId)
+            .eq("status", "submitted")
+            .select("id, tracking_number, assigned_driver_id, assigned_driver_name, tracking_progress_label")
             .single();
     }
 };

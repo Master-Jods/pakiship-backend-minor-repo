@@ -26,6 +26,16 @@ let OperatorDashboardController = class OperatorDashboardController {
     getDashboard(request) {
         return this.operatorDashboardService.getDashboard(getSessionUser(request));
     }
+    getRelayBookings(request) {
+        return this.operatorDashboardService.getRelayBookings(getSessionUser(request));
+    }
+    updateRelayBookingStatus(request, draftId, body) {
+        return this.operatorDashboardService.updateRelayBookingStatus(getSessionUser(request), draftId, {
+            currentLocation: body.currentLocation,
+            progressLabel: body.progressLabel,
+            progressPercentage: body.progressPercentage,
+        });
+    }
 };
 exports.OperatorDashboardController = OperatorDashboardController;
 __decorate([
@@ -35,6 +45,22 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], OperatorDashboardController.prototype, "getDashboard", null);
+__decorate([
+    (0, common_1.Get)("relay-bookings"),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], OperatorDashboardController.prototype, "getRelayBookings", null);
+__decorate([
+    (0, common_1.Patch)("relay-bookings/:draftId/status"),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)("draftId")),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], OperatorDashboardController.prototype, "updateRelayBookingStatus", null);
 exports.OperatorDashboardController = OperatorDashboardController = __decorate([
     (0, common_1.Controller)("operator/dashboard"),
     (0, common_1.UseGuards)(session_auth_guard_1.SessionAuthGuard),
