@@ -26,6 +26,10 @@ type SignupInput = {
   documents?: string[];
 };
 
+function isUserRole(value: string): value is UserRole {
+  return value === "customer" || value === "driver" || value === "operator";
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -45,6 +49,10 @@ export class AuthService {
   constructor(private readonly supabaseService: SupabaseService) {}
 
   async createUser(input: SignupInput) {
+    if (!isUserRole(input.role)) {
+      throw new BadRequestException("Please select a valid account role.");
+    }
+
     const admin = this.supabaseService.createAdminClient();
     const email = normalizeEmail(input.email);
     const phone = normalizePhone(input.phone);
@@ -128,6 +136,10 @@ export class AuthService {
   }
 
   async signIn(identifier: string, password: string, role: UserRole) {
+    if (!isUserRole(role)) {
+      throw new BadRequestException("Please select a valid role before logging in.");
+    }
+
     const admin = this.supabaseService.createAdminClient();
     const supabase = this.supabaseService.createServerClient();
 

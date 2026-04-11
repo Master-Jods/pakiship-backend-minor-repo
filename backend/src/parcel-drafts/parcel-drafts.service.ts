@@ -8,6 +8,7 @@ import type { SessionPayload } from "../common/session/session.types";
 import { ParcelDraftsRepository } from "./parcel-drafts.repository";
 import {
   ALLOWED_SERVICES,
+  BULK_ORDER_THRESHOLD,
   DEFAULT_ITEMS_PAGE_SIZE,
   MAX_ITEM_QUANTITY,
   MAX_ITEMS_PAGE_SIZE,
@@ -25,6 +26,15 @@ type DraftItemInput = {
   deliveryGuarantee?: unknown;
   quantity?: unknown;
   photoName?: unknown;
+};
+
+type DropOffPointInput = {
+  id?: unknown;
+  name?: unknown;
+  address?: unknown;
+  distance?: unknown;
+  status?: unknown;
+  capacity?: unknown;
 };
 
 function asNonEmptyString(value: unknown) {
@@ -87,6 +97,34 @@ function getHistoryType(items: Array<{ item_type?: string | null; delivery_guara
   return "Parcel Delivery";
 }
 
+function deriveDeliveryMode(serviceId: string) {
+  return serviceId === "pakishare" ? "relay" : "direct";
+}
+
+function buildTrackingStatusLabel(
+  progressLabel?: string | null,
+  fallbackStatus?: string | null,
+) {
+  if (progressLabel) return progressLabel;
+  if (fallbackStatus === "submitted") return "Booking Confirmed";
+  return fallbackStatus || "Booking Confirmed";
+}
+
+function normalizeDropOffPoint(dropOffPoint: unknown) {
+  const value = (dropOffPoint ?? {}) as DropOffPointInput;
+  const id = asNonEmptyString(value.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: asNonEmptyString(value.name) || "Frassati Partner Store",
+    address: asNonEmptyString(value.address) || "Near Frassati, Sampaloc, Manila",
+    distance: asNonEmptyString(value.distance) || "Nearby",
+    status: asNonEmptyString(value.status) || "Open",
+    capacity: asNonEmptyString(value.capacity) || "Medium",
+  };
+}
+
 @Injectable()
 export class ParcelDraftsService {
   constructor(
@@ -94,6 +132,45 @@ export class ParcelDraftsService {
     private readonly customerNotificationsService: CustomerNotificationsService,
     private readonly supabaseService: SupabaseService,
   ) {}
+
+  private async getDraftParcelCount(userId: string, draftId: string) {
+    const { data, error } = await this.repository.listOwnedDraftItemQuantities(draftId, userId);
+    if (error) {
+      throw new InternalServerErrorException("Unable to inspect parcel quantities right now.");
+    }
+
+    return (data ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0);
+  }
+
+  private mapServiceDetails(draft: {
+    service_id?: string | null;
+    service_price?: number | string | null;
+    delivery_mode?: string | null;
+    is_bulk?: boolean | null;
+    drop_off_point_id?: string | null;
+    drop_off_point_name?: string | null;
+    drop_off_point_address?: string | null;
+    drop_off_point_distance_text?: string | null;
+    drop_off_point_status?: string | null;
+    drop_off_point_capacity?: string | null;
+  }) {
+    return {
+      id: draft.service_id || null,
+      price: Number(draft.service_price ?? 0),
+      deliveryMode: draft.delivery_mode || null,
+      isBulk: Boolean(draft.is_bulk),
+      dropOffPoint: draft.drop_off_point_id
+        ? {
+            id: draft.drop_off_point_id,
+            name: draft.drop_off_point_name,
+            address: draft.drop_off_point_address,
+            distance: draft.drop_off_point_distance_text,
+            status: draft.drop_off_point_status,
+            capacity: draft.drop_off_point_capacity,
+          }
+        : null,
+    };
+  }
 
   async saveRouteDetails(user: SessionPayload, body: Record<string, unknown>) {
     const draftId = body.draftId ? String(body.draftId) : null;
@@ -173,6 +250,15 @@ export class ParcelDraftsService {
         stepCompleted: data.step_completed,
         status: data.status,
         trackingNumber: data.tracking_number,
+        service: this.mapServiceDetails(data),
+        tracking: {
+          currentLocation: data.tracking_current_location || data.pickup_address,
+          progressLabel: buildTrackingStatusLabel(
+            data.tracking_progress_label,
+            data.status,
+          ),
+          progressPercentage: Number(data.tracking_progress_percentage ?? 0),
+        },
         items,
       },
       pagination: {
@@ -338,7 +424,7 @@ export class ParcelDraftsService {
   async selectDraftService(user: SessionPayload, draftId: string, body: Record<string, unknown>) {
     const serviceId = String(body.serviceId ?? "");
     const servicePrice = Number(body.servicePrice ?? 0);
-    const dropOffPoint = body.dropOffPoint ?? null;
+    const dropOffPoint = normalizeDropOffPoint(body.dropOffPoint);
 
     if (!ALLOWED_SERVICES.has(serviceId)) {
       throw new BadRequestException("Please select a valid delivery service.");
@@ -348,7 +434,7 @@ export class ParcelDraftsService {
       throw new BadRequestException("Service pricing is invalid.");
     }
 
-    if (serviceId === "pakishare" && !(dropOffPoint as { id?: unknown } | null)?.id) {
+    if (serviceId === "pakishare" && !dropOffPoint?.id) {
       throw new BadRequestException("PakiShare requires a drop-off hub selection.");
     }
 
@@ -357,9 +443,23 @@ export class ParcelDraftsService {
       throw new NotFoundException("Parcel draft not found.");
     }
 
+    const totalParcels = await this.getDraftParcelCount(user.userId, draftId);
+    const isBulk = totalParcels >= BULK_ORDER_THRESHOLD;
+    const deliveryMode = deriveDeliveryMode(serviceId);
+
     const updateResult = await this.repository.updateOwnedDraftState(draftId, user.userId, {
       step_completed: 4,
       status: "draft",
+      service_id: serviceId,
+      service_price: servicePrice,
+      delivery_mode: deliveryMode,
+      is_bulk: isBulk,
+      drop_off_point_id: dropOffPoint?.id ?? null,
+      drop_off_point_name: dropOffPoint?.name ?? null,
+      drop_off_point_address: dropOffPoint?.address ?? null,
+      drop_off_point_distance_text: dropOffPoint?.distance ?? null,
+      drop_off_point_status: dropOffPoint?.status ?? null,
+      drop_off_point_capacity: dropOffPoint?.capacity ?? null,
     });
     if (updateResult.error) {
       throw new InternalServerErrorException("Unable to save delivery service right now.");
@@ -372,6 +472,8 @@ export class ParcelDraftsService {
       service: {
         id: serviceId,
         price: servicePrice,
+        deliveryMode,
+        isBulk,
         dropOffPoint,
       },
     };
@@ -410,7 +512,26 @@ export class ParcelDraftsService {
       throw new NotFoundException("Parcel draft not found.");
     }
 
+    const normalizedTotalParcels =
+      Number.isFinite(totalParcels) && totalParcels > 0
+        ? totalParcels
+        : await this.getDraftParcelCount(user.userId, draftId);
+    const isBulk = normalizedTotalParcels >= BULK_ORDER_THRESHOLD;
+    const deliveryMode = deriveDeliveryMode(selectedService);
     const trackingNumber = ownedDraft.data.tracking_number || createTrackingNumber();
+    const dropOffPointId =
+      ownedDraft.data.drop_off_point_id ||
+      (deliveryMode === "relay" ? "frassati-7-eleven" : null);
+    const dropOffPointName =
+      ownedDraft.data.drop_off_point_name ||
+      (deliveryMode === "relay" ? "7-Eleven Frassati Corner" : null);
+    const dropOffPointAddress =
+      ownedDraft.data.drop_off_point_address ||
+      (deliveryMode === "relay" ? "Near Frassati Building, Sampaloc, Manila" : null);
+    const initialTrackingLocation =
+      deliveryMode === "relay" && dropOffPointName ? dropOffPointName : "Pickup confirmed";
+    const initialTrackingLabel =
+      deliveryMode === "relay" ? "Awaiting drop-off point handoff" : "Preparing for pickup";
 
     const updateResult = await this.repository.updateOwnedDraftState(draftId, user.userId, {
       step_completed: 5,
@@ -420,6 +541,16 @@ export class ParcelDraftsService {
       sender_phone: senderPhone,
       receiver_name: receiverName,
       receiver_phone: receiverPhone,
+      service_id: selectedService,
+      service_price: servicePrice,
+      delivery_mode: deliveryMode,
+      is_bulk: isBulk,
+      drop_off_point_id: dropOffPointId,
+      drop_off_point_name: dropOffPointName,
+      drop_off_point_address: dropOffPointAddress,
+      tracking_current_location: initialTrackingLocation,
+      tracking_progress_label: initialTrackingLabel,
+      tracking_progress_percentage: deliveryMode === "relay" ? 30 : 20,
     });
     if (
       updateResult.error ||
@@ -434,6 +565,15 @@ export class ParcelDraftsService {
       "Parcel booking confirmed",
       `Your parcel for ${receiverName} is booked. Tracking No. ${trackingNumber}.`,
     );
+
+    if (deliveryMode === "relay" && dropOffPointName) {
+      await this.customerNotificationsService.createNotification(
+        user.userId,
+        "delivery",
+        "Relay drop-off point assigned",
+        `Drop off your parcel at ${dropOffPointName} to continue relay delivery.`,
+      );
+    }
 
     const admin = this.supabaseService.createAdminClient();
     await admin.from("customer_activity_logs").insert({
@@ -456,9 +596,19 @@ export class ParcelDraftsService {
         paymentMethod,
         selectedService,
         servicePrice,
-        totalParcels,
+        totalParcels: normalizedTotalParcels,
         distance,
         duration,
+        deliveryMode,
+        isBulk,
+        dropOffPoint:
+          deliveryMode === "relay"
+            ? {
+                id: dropOffPointId,
+                name: dropOffPointName,
+                address: dropOffPointAddress,
+              }
+            : null,
       },
     };
   }
@@ -478,12 +628,25 @@ export class ParcelDraftsService {
 
     return {
       trackingNumber: data.tracking_number,
-      status:
-        data.status === "submitted" ? "Booking Confirmed" : data.status,
+      status: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
       origin: data.pickup_address,
       destination: data.delivery_address,
       estimatedDelivery: data.duration_text || "Calculating...",
       distance: data.distance_text || "Calculating...",
+      deliveryMode: data.delivery_mode || deriveDeliveryMode(data.service_id || "PakiExpress"),
+      isBulk: Boolean(data.is_bulk),
+      currentLocation: data.tracking_current_location || data.pickup_address,
+      progress: {
+        label: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
+        percentage: Number(data.tracking_progress_percentage ?? 0),
+      },
+      dropOffPoint: data.drop_off_point_id
+        ? {
+            id: data.drop_off_point_id,
+            name: data.drop_off_point_name,
+            address: data.drop_off_point_address,
+          }
+        : null,
       driver: {
         name: "Assigning driver",
         phone: "Unavailable",
@@ -502,7 +665,7 @@ export class ParcelDraftsService {
         },
         {
           status: "Preparing for Pickup",
-          location: data.pickup_address,
+          location: data.tracking_current_location || data.pickup_address,
           timestamp: updatedTime.toLocaleTimeString("en-PH", {
             hour: "2-digit",
             minute: "2-digit",
@@ -510,16 +673,16 @@ export class ParcelDraftsService {
           completed: data.status === "submitted",
         },
         {
-          status: "In Transit",
+          status: buildTrackingStatusLabel(data.tracking_progress_label, "In Transit"),
           location: data.delivery_address,
           timestamp: "Pending",
-          completed: false,
+          completed: Number(data.tracking_progress_percentage ?? 0) >= 60,
         },
         {
           status: "Delivered",
           location: data.delivery_address,
           timestamp: "Pending",
-          completed: false,
+          completed: Number(data.tracking_progress_percentage ?? 0) >= 100,
         },
       ],
     };
@@ -555,6 +718,10 @@ export class ParcelDraftsService {
           distance: draft.distance_text,
           duration: draft.duration_text,
           totalParcels,
+          deliveryMode: draft.delivery_mode || null,
+          isBulk: Boolean(draft.is_bulk),
+          currentLocation: draft.tracking_current_location || draft.pickup_address,
+          progressLabel: buildTrackingStatusLabel(draft.tracking_progress_label, draft.status),
         };
       }),
     };
@@ -591,6 +758,10 @@ export class ParcelDraftsService {
         distance: data.distance_text,
         duration: data.duration_text,
         totalParcels,
+        deliveryMode: data.delivery_mode || null,
+        isBulk: Boolean(data.is_bulk),
+        currentLocation: data.tracking_current_location || data.pickup_address,
+        progressLabel: buildTrackingStatusLabel(data.tracking_progress_label, data.status),
       },
       details: {
         sender: {
@@ -602,6 +773,18 @@ export class ParcelDraftsService {
           name: data.receiver_name || "Not available",
           phone: data.receiver_phone || "Not available",
           address: data.delivery_address,
+        },
+        service: {
+          id: data.service_id || "Not available",
+          deliveryMode: data.delivery_mode || "direct",
+          isBulk: Boolean(data.is_bulk),
+          dropOffPoint: data.drop_off_point_id
+            ? {
+                id: data.drop_off_point_id,
+                name: data.drop_off_point_name,
+                address: data.drop_off_point_address,
+              }
+            : null,
         },
         parcel: {
           weight: firstItem?.weight_text || "Not available",
@@ -636,7 +819,7 @@ export class ParcelDraftsService {
           {
             status: historyStatus.label,
             time: formatHistoryDate(data.updated_at),
-            location: data.delivery_address,
+            location: data.tracking_current_location || data.delivery_address,
             completed: true,
           },
         ],
